@@ -1,3 +1,6 @@
+# Modified by Spring
+### Experimental code modified to run on the web.
+
 # BeastLocator: 野獣邸の方角を知る
 
 これを読んでいるならば、野獣邸、という言葉を絶対に一度は聞いたことがあると思います  
