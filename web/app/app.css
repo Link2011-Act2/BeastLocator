@@ -1,2 +1,2 @@
-import "beercss";
-import "material-dynamic-colors";
+@import "tailwindcss";
+@import "beercss/dist/cdn/beer.min.css";
