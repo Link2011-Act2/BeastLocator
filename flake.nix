@@ -16,8 +16,8 @@
       {
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
-            deno
 	    pnpm
+	    nodejs_25
 	    pnpm-shell-completion
           ];
         };
