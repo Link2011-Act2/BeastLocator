@@ -2,10 +2,13 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 
 export function Welcome() {
+  //ダークモード、匿名モード(仮)の切り替え
   const [dark, setDark] = useState(false);
   const [anon, setAnon] = useState(false);
+
   const navigate = useNavigate();
 
+　//ダークモード切り替え関連の処理
   useEffect(() => {
     const saved = localStorage.getItem("theme");
     if (saved !== null) {
@@ -45,5 +48,6 @@ export function Welcome() {
   );
 };
 
+//野獣邸の住所
 const lat = 35.665544
 const lng = 139.6699717
