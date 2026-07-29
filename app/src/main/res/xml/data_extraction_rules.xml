@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup>
+        <!-- Back up only explicit user preferences. -->
+        <include domain="sharedpref" path="destination_settings.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <!-- Runtime location and OS registration state must be rebuilt on the destination device. -->
+        <include domain="sharedpref" path="destination_settings.xml" />
+    </device-transfer>
+</data-extraction-rules>
