@@ -700,6 +700,68 @@
                         android:textSize="14sp"
                         android:textStyle="bold" />
 
+                    <LinearLayout
+                        android:id="@+id/debugUpdateTestingContainer"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:orientation="vertical"
+                        android:visibility="gone">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="@font/noto_sans_jp"
+                            android:text="@string/debug_update_testing_title"
+                            android:textColor="@color/expressive_primary"
+                            android:textSize="13sp" />
+
+                        <com.google.android.material.materialswitch.MaterialSwitch
+                            android:id="@+id/debugUpdateShowLatestSwitch"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="@string/debug_update_show_latest_title"
+                            android:textColor="@color/expressive_on_surface"
+                            android:textSize="14sp" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="@font/noto_sans_jp"
+                            android:text="@string/debug_update_show_latest_help"
+                            android:textColor="@color/expressive_on_surface_variant"
+                            android:textSize="12sp" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:fontFamily="@font/noto_sans_jp"
+                            android:labelFor="@id/debugUpdateCurrentVersionEdit"
+                            android:text="@string/debug_update_current_version_title"
+                            android:textColor="@color/expressive_on_surface"
+                            android:textSize="14sp" />
+
+                        <EditText
+                            android:id="@+id/debugUpdateCurrentVersionEdit"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="@font/noto_sans_mono"
+                            android:importantForAutofill="no"
+                            android:inputType="textVisiblePassword"
+                            android:maxLines="1"
+                            android:singleLine="true" />
+
+                        <TextView
+                            android:id="@+id/debugUpdateCurrentVersionHelp"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="@font/noto_sans_jp"
+                            android:textColor="@color/expressive_on_surface_variant"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"

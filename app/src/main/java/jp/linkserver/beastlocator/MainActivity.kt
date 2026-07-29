@@ -118,6 +118,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var isShowingPreciseLocationPermissionGuide = false
     private var isShowingBackgroundPermissionGuide = false
     private var backgroundPermissionGuideDialog: AlertDialog? = null
+    private var updateCheckOperation: AppUpdateManager.Operation? = null
+    private var pendingUpdateInfo: AppUpdateInfo? = null
+    private var hasStartedAutomaticUpdateCheck = false
+    private var isUpdateDialogShowing = false
     private var skipPermissionGuideOnce = false
     private var isScreenCaptureCallbackRegistered = false
     private var screenCaptureCallbackRef: Any? = null
@@ -223,6 +227,11 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         registerScreenCaptureCallbackIfSupported()
     }
 
+    override fun onPostResume() {
+        super.onPostResume()
+        maybeShowUpdateDialog()
+    }
+
     override fun onPause() {
         super.onPause()
         stopCompassFrameLoop()
@@ -242,6 +251,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         arrivalNameRequest?.cancel()
         arrivalNameRequest = null
         backgroundPermissionGuideDialog?.dismiss()
+        updateCheckOperation?.cancel()
+        updateCheckOperation = null
         super.onDestroy()
     }
 
@@ -280,6 +291,63 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         ensureBackgroundLocationPermission()
         if (maybeLaunchWelcomeScreen()) return
         startUpdatesIfPermitted()
+        startAutomaticUpdateCheck()
+    }
+
+    private fun startAutomaticUpdateCheck() {
+        if (hasStartedAutomaticUpdateCheck) return
+        hasStartedAutomaticUpdateCheck = true
+        updateCheckOperation = runCatching {
+            AppUpdateManager.checkForUpdate(this) { result ->
+                updateCheckOperation = null
+                result.onSuccess { updateInfo ->
+                    if (updateInfo != null &&
+                        !AppUpdateManager.isUpdateNotificationDismissed(this, updateInfo.tagName)
+                    ) {
+                        pendingUpdateInfo = updateInfo
+                        maybeShowUpdateDialog()
+                    }
+                }.onFailure {
+                    AppDiagnostics.warn("automatic_update_check_failed", error = it)
+                }
+            }
+        }.onFailure {
+            AppDiagnostics.warn("automatic_update_check_start_failed", error = it)
+        }.getOrNull()
+    }
+
+    private fun maybeShowUpdateDialog() {
+        val updateInfo = pendingUpdateInfo ?: return
+        if (isUpdateDialogShowing || isFinishing || isDestroyed || !hasWindowFocus()) return
+        isUpdateDialogShowing = true
+        val notesPreview = updateInfo.releaseNotes
+            .lineSequence()
+            .filter { it.isNotBlank() }
+            .take(4)
+            .joinToString("\n")
+            .ifBlank { getString(R.string.update_release_notes_empty) }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.update_available_title)
+            .setMessage(
+                getString(
+                    R.string.update_available_message,
+                    updateInfo.tagName,
+                    notesPreview
+                )
+            )
+            .setPositiveButton(R.string.update_show_details_button) { _, _ ->
+                pendingUpdateInfo = null
+                startActivity(UpdateActivity.createIntent(this, updateInfo))
+            }
+            .setNegativeButton(R.string.update_dismiss_version_button) { _, _ ->
+                AppUpdateManager.dismissUpdateNotificationUntilNextVersion(
+                    this,
+                    updateInfo.tagName
+                )
+                pendingUpdateInfo = null
+            }
+            .setOnDismissListener { isUpdateDialogShowing = false }
+            .show()
     }
 
     private fun maybeLaunchWelcomeScreen(): Boolean {

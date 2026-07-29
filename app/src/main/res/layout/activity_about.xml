@@ -227,6 +227,7 @@
             </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/aboutUpdateCard"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
@@ -253,6 +254,7 @@
                     android:textSize="13sp" />
 
                 <TextView
+                    android:id="@+id/aboutUpdateNotesText"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="6dp"
@@ -261,6 +263,13 @@
                     android:text="@string/about_update_notes"
                     android:textColor="@color/expressive_on_surface_variant"
                     android:textSize="13sp" />
+
+                <Button
+                    android:id="@+id/aboutCheckUpdateButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/about_check_update_button" />
             </LinearLayout>
 
             <LinearLayout

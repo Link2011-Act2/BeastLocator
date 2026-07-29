@@ -13,6 +13,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.widget.doAfterTextChanged
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.materialswitch.MaterialSwitch
 import java.util.Locale
@@ -75,10 +76,12 @@ class SettingsActivity : AppCompatActivity() {
         val debugResetDistanceButton = findViewById<Button>(R.id.debugResetDistanceButton)
         val debugEditDestinationButton = findViewById<Button>(R.id.debugEditDestinationButton)
         val debugResetDestinationButton = findViewById<Button>(R.id.debugResetDestinationButton)
+        val currentVersionName = resolveAppVersionName()
 
         findViewById<TextView>(R.id.versionText).text =
-            getString(R.string.version_format, resolveAppVersionName())
-        debugRevisionValue.text = getString(R.string.debug_revision_value, BuildConfig.REVISION_ID)
+            getString(R.string.version_format, currentVersionName)
+        debugRevisionValue.text = getString(R.string.debug_revision_value, BuildConfig.BUILD_NUMBER)
+        configureIntDevUpdateTesting(currentVersionName)
 
         refreshDestinationLabels()
 
@@ -615,6 +618,36 @@ class SettingsActivity : AppCompatActivity() {
             toggleDebugMenuButton.visibility = android.view.View.GONE
             toggleDebugMenuButton.setOnClickListener(null)
         }
+    }
+
+    private fun configureIntDevUpdateTesting(currentVersionName: String) {
+        val container = findViewById<LinearLayout>(R.id.debugUpdateTestingContainer)
+        val isIntDev = ReleaseChannelDetector.detect(currentVersionName) == ReleaseChannel.INTDEV
+        container.visibility = if (isIntDev) android.view.View.VISIBLE else android.view.View.GONE
+        if (!isIntDev) return
+
+        val showLatestSwitch =
+            findViewById<MaterialSwitch>(R.id.debugUpdateShowLatestSwitch)
+        val versionOverrideEdit = findViewById<EditText>(R.id.debugUpdateCurrentVersionEdit)
+        showLatestSwitch.isChecked =
+            AppUpdateManager.isShowLatestReleaseForTestingEnabled(this)
+        showLatestSwitch.setOnCheckedChangeListener { _, enabled ->
+            AppUpdateManager.setShowLatestReleaseForTestingEnabled(this, enabled)
+        }
+        versionOverrideEdit.hint = currentVersionName
+        versionOverrideEdit.setText(
+            AppUpdateManager.getUpdateCurrentVersionOverrideForTesting(this)
+        )
+        versionOverrideEdit.doAfterTextChanged { value ->
+            AppUpdateManager.setUpdateCurrentVersionOverrideForTesting(
+                this,
+                value?.toString().orEmpty()
+            )
+        }
+        findViewById<TextView>(R.id.debugUpdateCurrentVersionHelp).text = getString(
+            R.string.debug_update_current_version_help,
+            currentVersionName
+        )
     }
 
     private fun isStableChannel(): Boolean {

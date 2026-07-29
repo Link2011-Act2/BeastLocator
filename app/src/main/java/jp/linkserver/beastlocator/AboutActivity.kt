@@ -14,6 +14,8 @@ import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 class AboutActivity : AppCompatActivity() {
+    private var updateCheckOperation: AppUpdateManager.Operation? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_about)
@@ -36,6 +38,9 @@ class AboutActivity : AppCompatActivity() {
         findViewById<android.widget.FrameLayout>(R.id.aboutSimpleVersionCard).setOnClickListener {
             showVersionDetailsDialog(versionName, versionCode, channel)
         }
+        findViewById<android.widget.Button>(R.id.aboutCheckUpdateButton).setOnClickListener {
+            checkForUpdateManually()
+        }
 
         findViewById<LinearLayout>(R.id.openOssLicensesCard).setOnClickListener {
             startActivity(Intent(this, OssLicensesActivity::class.java))
@@ -52,6 +57,46 @@ class AboutActivity : AppCompatActivity() {
         findViewById<ImageView>(R.id.aboutAppIcon).setOnLongClickListener {
             showEasterEggDialog()
             true
+        }
+    }
+
+    override fun onDestroy() {
+        updateCheckOperation?.cancel()
+        updateCheckOperation = null
+        super.onDestroy()
+    }
+
+    private fun checkForUpdateManually() {
+        val button = findViewById<android.widget.Button>(R.id.aboutCheckUpdateButton)
+        val notes = findViewById<TextView>(R.id.aboutUpdateNotesText)
+        updateCheckOperation?.cancel()
+        button.isEnabled = false
+        notes.setText(R.string.update_checking)
+        updateCheckOperation = runCatching {
+            AppUpdateManager.checkForUpdate(this, force = true) { result ->
+                updateCheckOperation = null
+                button.isEnabled = true
+                result.onSuccess { updateInfo ->
+                    if (updateInfo == null) {
+                        notes.setText(R.string.update_check_latest)
+                    } else {
+                        notes.text = getString(R.string.update_available, updateInfo.tagName)
+                        startActivity(UpdateActivity.createIntent(this, updateInfo))
+                    }
+                }.onFailure { error ->
+                    notes.text = getString(
+                        R.string.update_check_failed,
+                        error.localizedMessage ?: error.javaClass.simpleName
+                    )
+                }
+            }
+        }.getOrElse { error ->
+            button.isEnabled = true
+            notes.text = getString(
+                R.string.update_check_failed,
+                error.localizedMessage ?: error.javaClass.simpleName
+            )
+            null
         }
     }
 
@@ -140,7 +185,7 @@ class AboutActivity : AppCompatActivity() {
                 R.string.about_version_details_message,
                 versionName,
                 versionCode,
-                BuildConfig.REVISION_ID
+                BuildConfig.BUILD_NUMBER
             )
             MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.about_version_details_title)
@@ -156,7 +201,7 @@ class AboutActivity : AppCompatActivity() {
             R.string.about_version_details_message,
             versionName,
             versionCode,
-            BuildConfig.REVISION_ID
+            BuildConfig.BUILD_NUMBER
         ).split('\n')
         val horizontalPadding = (24 * resources.displayMetrics.density).toInt()
         val container = LinearLayout(this).apply {
