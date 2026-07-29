@@ -1,12 +1,14 @@
 package jp.linkserver.beastlocator
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -16,6 +18,12 @@ object NotificationHelper {
     private const val NOTIFICATION_ID = 1001
     private const val APPROACH_NOTIFICATION_ID = 1002
     private const val LIVE_UPDATE_MIN_SDK = 36
+    private const val MIN_APPROACH_UPDATE_INTERVAL_MS = 1_000L
+    private var isApproachNotificationStateKnown = false
+    private var isApproachNotificationVisible = false
+    private var lastApproachBody: String? = null
+    private var lastApproachProgress = -1
+    private var lastApproachUpdateElapsedRealtime = 0L
 
     fun isLiveUpdateSupported(): Boolean = Build.VERSION.SDK_INT >= LIVE_UPDATE_MIN_SDK
 
@@ -54,6 +62,7 @@ object NotificationHelper {
         NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
     }
 
+    @Synchronized
     fun showApproachProgress(context: Context, remainingMeters: Float, progressPercent: Int) {
         if (!isLiveUpdateSupported()) return
 
@@ -80,46 +89,65 @@ object NotificationHelper {
             R.string.notification_live_body,
             GeoUtils.formatDistance(remainingMeters)
         )
-
-        if (showApproachLiveUpdateApi36(context, pendingIntent, body, clamped)) {
+        if (isApproachNotificationVisible &&
+            lastApproachBody == body &&
+            lastApproachProgress == clamped
+        ) {
+            return
+        }
+        val now = SystemClock.elapsedRealtime()
+        if (isApproachNotificationVisible &&
+            now - lastApproachUpdateElapsedRealtime < MIN_APPROACH_UPDATE_INTERVAL_MS
+        ) {
             return
         }
 
-        // Safety fallback for API behavior changes.
-        showApproachProgressCompat(context, pendingIntent, body, clamped)
+        val shown = showApproachLiveUpdateApi36(context, pendingIntent, body, clamped) ||
+            showApproachProgressCompat(context, pendingIntent, body, clamped)
+        if (shown) {
+            isApproachNotificationStateKnown = true
+            isApproachNotificationVisible = true
+            lastApproachBody = body
+            lastApproachProgress = clamped
+            lastApproachUpdateElapsedRealtime = now
+        }
     }
 
+    @SuppressLint("MissingPermission")
     private fun showApproachProgressCompat(
         context: Context,
         pendingIntent: PendingIntent,
         body: String,
         clamped: Int
-    ) {
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification_arrow)
-            .setContentTitle(context.getString(R.string.notification_live_title))
-            .setContentText(body)
-            .setSubText(context.getString(R.string.notification_live_subtext))
-            .setStyle(
-                NotificationCompat.BigTextStyle()
-                    .bigText(body)
-                    .setSummaryText(
-                        context.getString(R.string.notification_live_summary, clamped)
-                    )
-            )
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setColor(resolveLiveNotificationColor(context))
-            .setColorized(true)
-            .setProgress(100, clamped, false)
-            .setContentIntent(pendingIntent)
-            .build()
+    ): Boolean {
+        return runCatching {
+            val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification_arrow)
+                .setContentTitle(context.getString(R.string.notification_live_title))
+                .setContentText(body)
+                .setSubText(context.getString(R.string.notification_live_subtext))
+                .setStyle(
+                    NotificationCompat.BigTextStyle()
+                        .bigText(body)
+                        .setSummaryText(
+                            context.getString(R.string.notification_live_summary, clamped)
+                        )
+                )
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setColor(resolveLiveNotificationColor(context))
+                .setColorized(true)
+                .setProgress(100, clamped, false)
+                .setContentIntent(pendingIntent)
+                .build()
 
-        NotificationManagerCompat.from(context).notify(APPROACH_NOTIFICATION_ID, notification)
+            NotificationManagerCompat.from(context).notify(APPROACH_NOTIFICATION_ID, notification)
+        }.isSuccess
     }
 
+    @SuppressLint("MissingPermission")
     private fun showApproachLiveUpdateApi36(
         context: Context,
         pendingIntent: PendingIntent,
@@ -224,8 +252,19 @@ object NotificationHelper {
         }
     }
 
+    @Synchronized
     fun cancelApproachProgress(context: Context) {
-        NotificationManagerCompat.from(context).cancel(APPROACH_NOTIFICATION_ID)
+        if (isApproachNotificationStateKnown && !isApproachNotificationVisible) return
+        val cancelled = runCatching {
+            NotificationManagerCompat.from(context).cancel(APPROACH_NOTIFICATION_ID)
+        }.isSuccess
+        if (cancelled) {
+            isApproachNotificationStateKnown = true
+            isApproachNotificationVisible = false
+            lastApproachBody = null
+            lastApproachProgress = -1
+            lastApproachUpdateElapsedRealtime = 0L
+        }
     }
 
     private fun resolveLiveNotificationColor(context: Context): Int {

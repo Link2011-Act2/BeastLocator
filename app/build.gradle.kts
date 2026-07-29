@@ -334,7 +334,7 @@ android {
         buildConfig = true
     }
 
-    val appVersionName = "0.9.5-Beta" // (開発時バージョン: 1.2.10-IntDev)
+    val appVersionName = "1.0.0-IntDev_RC0_rev0"
 
     defaultConfig {
         applicationId = "jp.linkserver.beastlocator"

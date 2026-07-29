@@ -16,6 +16,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.graphics.Typeface
+import android.view.Choreographer
 import android.view.View
 import android.widget.Button
 import android.widget.ImageButton
@@ -36,6 +37,8 @@ import com.google.android.gms.location.Priority
 import android.view.animation.LinearInterpolator
 import kotlin.math.abs
 import kotlin.math.ceil
+import kotlin.math.exp
+import kotlin.math.sqrt
 
 class MainActivity : AppCompatActivity(), SensorEventListener {
     companion object {
@@ -43,6 +46,17 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         private const val ARRIVAL_THRESHOLD_METERS = 50f
         private const val DISTANCE_MASK_STEP_KM = 100
         private const val LOCATION_TIMEOUT_MS = 30_000L
+        private const val COMPASS_SMOOTHING_TIME_CONSTANT_SECONDS = 0.14f
+        private const val LOW_ACCURACY_SMOOTHING_TIME_CONSTANT_SECONDS = 0.35f
+        private const val SENSOR_FILTER_TIME_CONSTANT_SECONDS = 0.12f
+        private const val MAX_RENDERED_ANGULAR_SPEED_DEGREES_PER_SECOND = 720f
+        private const val MAX_RAW_ANGULAR_SPEED_DEGREES_PER_SECOND = 1_080f
+        private const val RAW_HEADING_JUMP_ALLOWANCE_DEGREES = 35f
+        private const val MAX_SENSOR_SAMPLE_GAP_SECONDS = 1f
+        private const val MAX_FRAME_DELTA_SECONDS = 0.05f
+        private const val MAX_LEGACY_SAMPLE_SKEW_NANOS = 250_000_000L
+        private val LOW_HEADING_ACCURACY_RADIANS = Math.toRadians(30.0).toFloat()
+        private val REJECT_HEADING_ACCURACY_RADIANS = Math.toRadians(90.0).toFloat()
     }
 
     private lateinit var store: DestinationStore
@@ -59,8 +73,17 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var loadingArrowAnimator: ObjectAnimator? = null
 
     private var headingDegrees: Float = 0f
+    private var targetHeadingDegrees: Float = 0f
     private var hasHeadingSample = false
+    private var isLatestHeadingLowAccuracy = false
+    private var lastAcceptedHeadingTimestampNanos = 0L
+    private var lastCompassFrameTimestampNanos = 0L
+    private var isCompassFrameLoopRunning = false
+    private var cachedDestinationBearingDegrees: Float? = null
+    private var renderedArrowRotationDegrees = 0f
+    private var hasRenderedArrowRotation = false
     private var isCompassSmoothingEnabled = false
+    private var isRequestingLocationUpdates = false
     private var currentLocation: Destination? = null
     private var destination: Destination? = null
     private var hasShownInAppArrival = false
@@ -76,6 +99,20 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private val rotationMatrix       = FloatArray(9)
     private val orientationAngles    = FloatArray(3)
     private val remappedRotationMatrix = FloatArray(9)
+    private val rotationVector3 = FloatArray(3)
+    private val rotationVector4 = FloatArray(4)
+    private var hasAccelerometerSample = false
+    private var hasMagnetometerSample = false
+    private var accelerometerTimestampNanos = 0L
+    private var magnetometerTimestampNanos = 0L
+    private var magnetometerAccuracy = SensorManager.SENSOR_STATUS_UNRELIABLE
+    private val compassFrameCallback = object : Choreographer.FrameCallback {
+        override fun doFrame(frameTimeNanos: Long) {
+            if (!isCompassFrameLoopRunning) return
+            renderCompassFrame(frameTimeNanos)
+            Choreographer.getInstance().postFrameCallback(this)
+        }
+    }
     private val locationTimeoutRunnable = Runnable {
         if (currentLocation == null && !store.isDestinationAnswered()) {
             showLocationUnavailableState(R.string.location_timeout)
@@ -96,7 +133,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             store.setLastKnownLocationFromSystem(last.latitude, last.longitude)
             store.setLastKnownHeading(headingDegrees)
             ensureDestinationExists()
-            updateUi(refreshWidgets = true)
+            updateLocationUi(
+                processLocationSideEffects = true,
+                refreshWidgets = true
+            )
         }
     }
 
@@ -132,12 +172,16 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             val enabled = !store.isManualDistanceMaskEnabled()
             store.setManualDistanceMaskEnabled(enabled)
             applyDistanceMaskToggleButtonState()
-            updateUi(refreshWidgets = false)
+            updateLocationUi(
+                processLocationSideEffects = false,
+                refreshWidgets = false
+            )
         }
     }
 
     override fun onResume() {
         super.onResume()
+        BackgroundLocationUpdater.setForegroundClientActive(this, true)
         destination = store.getDestination()
         currentLocation = store.getLastKnownLocation()
         isCompassSmoothingEnabled = store.isCompassSmoothingEnabled()
@@ -154,12 +198,15 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
         syncDestinationGeofence()
         registerCompass()
+        startCompassFrameLoop()
         registerScreenCaptureCallbackIfSupported()
     }
 
     override fun onPause() {
         super.onPause()
-        fusedClient.removeLocationUpdates(locationCallback)
+        stopCompassFrameLoop()
+        stopForegroundLocationUpdates()
+        BackgroundLocationUpdater.setForegroundClientActive(this, false)
         distanceView.removeCallbacks(locationTimeoutRunnable)
         sensorManager.unregisterListener(this)
         stopLoadingArrowAnimation()
@@ -243,7 +290,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private fun ensureBackgroundLocationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
             hasPermission(Manifest.permission.ACCESS_FINE_LOCATION) &&
-            !hasPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+            !hasPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) &&
+            store.isBackgroundLocationUpdateActive() &&
+            !store.isBackgroundPermissionGuideShown()
         ) {
             if (isShowingBackgroundPermissionGuide ||
                 backgroundPermissionGuideDialog?.isShowing == true
@@ -275,9 +324,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     @SuppressLint("MissingPermission")
     private fun startUpdatesIfPermitted() {
         if (!hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)) {
-            fusedClient.removeLocationUpdates(locationCallback)
+            stopForegroundLocationUpdates()
             distanceView.removeCallbacks(locationTimeoutRunnable)
             currentLocation = null
+            cachedDestinationBearingDegrees = null
             startLoadingArrowAnimation()
             BackgroundLocationUpdater.updateRegistration(this)
             NotificationHelper.cancelApproachProgress(this)
@@ -302,6 +352,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
 
         if (!isSystemLocationEnabled()) {
+            stopForegroundLocationUpdates()
             startLoadingArrowAnimation()
             showLocationUnavailableState(R.string.location_service_disabled)
             return
@@ -319,21 +370,35 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                     store.setLastKnownLocationFromSystem(last.latitude, last.longitude)
                     store.setLastKnownHeading(headingDegrees)
                     ensureDestinationExists()
-                    updateUi(refreshWidgets = true)
+                    updateLocationUi(
+                        processLocationSideEffects = true,
+                        refreshWidgets = true
+                    )
                 }
             }
         distanceView.removeCallbacks(locationTimeoutRunnable)
         distanceView.postDelayed(locationTimeoutRunnable, LOCATION_TIMEOUT_MS)
+        if (isRequestingLocationUpdates) return
+
+        isRequestingLocationUpdates = true
         runCatching {
             fusedClient.requestLocationUpdates(locationRequest, locationCallback, mainLooper)
                 .addOnFailureListener {
+                    isRequestingLocationUpdates = false
                     distanceView.removeCallbacks(locationTimeoutRunnable)
                     showLocationUnavailableState(R.string.location_update_start_failed)
                 }
         }.onFailure {
+            isRequestingLocationUpdates = false
             distanceView.removeCallbacks(locationTimeoutRunnable)
             showLocationUnavailableState(R.string.location_update_start_failed)
         }
+    }
+
+    private fun stopForegroundLocationUpdates() {
+        if (!isRequestingLocationUpdates) return
+        isRequestingLocationUpdates = false
+        fusedClient.removeLocationUpdates(locationCallback)
     }
 
     private fun showLocationUnavailableState(messageResId: Int, detailMessageResId: Int? = null) {
@@ -371,7 +436,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
     }
 
-    private fun updateUi(refreshWidgets: Boolean) {
+    private fun updateLocationUi(
+        processLocationSideEffects: Boolean,
+        refreshWidgets: Boolean
+    ) {
         val current = currentLocation ?: return
         val target = destination ?: return
         if (!isValidDestination(current) || !isValidDestination(target)) return
@@ -393,16 +461,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         if (!distance.isFinite() || !bearing.isFinite()) {
             return
         }
-        if (!headingDegrees.isFinite()) return
-        val relativeRotation = normalizeRotation(
-            bearing - headingDegrees - ARROW_IMAGE_FORWARD_OFFSET_DEGREES
-        )
-        if (!relativeRotation.isFinite()) {
-            return
-        }
+        cachedDestinationBearingDegrees = bearing
 
         setArrivalStateVisible(false)
-        arrowView.rotation = relativeRotation
+        updateArrowRotationOnly()
         distanceView.typeface = Typeface.MONOSPACE
         distanceView.text = formatDistanceForMainScreen(distance)
         directionView.setTextColor(
@@ -415,6 +477,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 R.string.direction_label,
                 GeoUtils.cardinalFromBearing(bearing)
             )
+        }
+
+        if (!processLocationSideEffects) {
+            return
         }
 
         updateApproachLiveUpdate(distance)
@@ -528,7 +594,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         NotificationHelper.cancelApproachProgress(this)
         setArrivalStateVisible(false)
         if (currentLocation != null) {
-            updateUi(refreshWidgets = true)
+            updateLocationUi(
+                processLocationSideEffects = true,
+                refreshWidgets = true
+            )
         } else {
             DestinationWidgetProvider.refreshAllWidgets(this)
         }
@@ -575,7 +644,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         var normalized = value % 360f
         if (normalized > 180f) normalized -= 360f
         if (normalized < -180f) normalized += 360f
-        if (abs(normalized) < 0.5f) return 0f
         return normalized
     }
 
@@ -587,7 +655,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         if (!visible && wasMaskEnabled) {
             store.setManualDistanceMaskEnabled(false)
             if (!store.isDestinationAnswered()) {
-                updateUi(refreshWidgets = false)
+                updateLocationUi(
+                    processLocationSideEffects = false,
+                    refreshWidgets = false
+                )
             }
         }
 
@@ -666,6 +737,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         if (loadingArrowAnimator?.isRunning == true) {
             return
         }
+        hasRenderedArrowRotation = false
         loadingArrowAnimator = ObjectAnimator.ofFloat(arrowView, View.ROTATION, 0f, 360f).apply {
             duration = 1400L
             interpolator = LinearInterpolator()
@@ -677,6 +749,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private fun stopLoadingArrowAnimation() {
         loadingArrowAnimator?.cancel()
         loadingArrowAnimator = null
+        hasRenderedArrowRotation = false
     }
 
     private fun openAppPermissionSettings() {
@@ -705,6 +778,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private fun registerCompass() {
         sensorManager.unregisterListener(this)
+        resetCompassTracking()
 
         if (!store.isLegacyCompassModeEnabled()) {
             val sensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
@@ -730,46 +804,61 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         if (event == null) return
         when (event.sensor.type) {
             Sensor.TYPE_ROTATION_VECTOR -> {
-                val heading = calculateHeadingFromRotationVector(event.values) ?: return
-                headingDegrees = if (isCompassSmoothingEnabled && hasHeadingSample) {
-                    smoothAngleDegrees(headingDegrees, heading, 0.15f)
-                } else {
-                    hasHeadingSample = true
-                    heading
+                val estimatedAccuracy = event.values.getOrNull(4)
+                    ?.takeIf { it.isFinite() && it >= 0f }
+                if (hasHeadingSample &&
+                    estimatedAccuracy != null &&
+                    estimatedAccuracy > REJECT_HEADING_ACCURACY_RADIANS
+                ) {
+                    return
                 }
-                updateUi(refreshWidgets = false)
+                val heading = calculateHeadingFromRotationVector(event.values) ?: return
+                val lowAccuracy = event.accuracy == SensorManager.SENSOR_STATUS_UNRELIABLE ||
+                    (estimatedAccuracy != null && estimatedAccuracy > LOW_HEADING_ACCURACY_RADIANS)
+                acceptHeadingSample(heading, event.timestamp, lowAccuracy)
             }
             Sensor.TYPE_ACCELEROMETER -> {
-                applyLowPassFilter(event.values, accelerometerReading)
+                applyLowPassFilter(
+                    input = event.values,
+                    output = accelerometerReading,
+                    previousTimestampNanos = accelerometerTimestampNanos,
+                    currentTimestampNanos = event.timestamp,
+                    initialized = hasAccelerometerSample
+                )
+                hasAccelerometerSample = true
+                accelerometerTimestampNanos = event.timestamp
                 updateHeadingFromLegacyOrientation()
             }
             Sensor.TYPE_MAGNETIC_FIELD -> {
-                applyLowPassFilter(event.values, magnetometerReading)
+                applyLowPassFilter(
+                    input = event.values,
+                    output = magnetometerReading,
+                    previousTimestampNanos = magnetometerTimestampNanos,
+                    currentTimestampNanos = event.timestamp,
+                    initialized = hasMagnetometerSample
+                )
+                hasMagnetometerSample = true
+                magnetometerTimestampNanos = event.timestamp
+                magnetometerAccuracy = event.accuracy
                 updateHeadingFromLegacyOrientation()
             }
         }
     }
 
     private fun updateHeadingFromLegacyOrientation() {
+        if (!hasAccelerometerSample || !hasMagnetometerSample) return
+        if (abs(accelerometerTimestampNanos - magnetometerTimestampNanos) >
+            MAX_LEGACY_SAMPLE_SKEW_NANOS
+        ) {
+            return
+        }
         val success = SensorManager.getRotationMatrix(
             rotationMatrix, null,
             accelerometerReading,
             magnetometerReading
         )
         if (!success) return
-
-        val (xAxis, yAxis) = when (getDisplayRotation()) {
-            android.view.Surface.ROTATION_90 -> Pair(SensorManager.AXIS_Y, SensorManager.AXIS_MINUS_X)
-            android.view.Surface.ROTATION_180 -> Pair(SensorManager.AXIS_MINUS_X, SensorManager.AXIS_MINUS_Y)
-            android.view.Surface.ROTATION_270 -> Pair(SensorManager.AXIS_MINUS_Y, SensorManager.AXIS_X)
-            else -> Pair(SensorManager.AXIS_X, SensorManager.AXIS_Y)
-        }
-        SensorManager.remapCoordinateSystem(
-            rotationMatrix,
-            xAxis,
-            yAxis,
-            remappedRotationMatrix
-        )
+        if (!remapRotationMatrixForDisplay()) return
 
         SensorManager.getOrientation(remappedRotationMatrix, orientationAngles)
 
@@ -777,54 +866,218 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         if (!azimuthRad.isFinite()) return
 
         val heading = normalizeTo360(Math.toDegrees(azimuthRad.toDouble()).toFloat())
-        headingDegrees = if (isCompassSmoothingEnabled && hasHeadingSample) {
-            // Apply a slew rate limit (max 30 degrees per update) to legacy mode 
-            // to ignore sudden spikes and gimbal lock flips.
-            smoothAngleDegrees(headingDegrees, heading, 0.10f)
-        } else {
-            hasHeadingSample = true
-            heading
-        }
-        updateUi(refreshWidgets = false)
+        acceptHeadingSample(
+            heading = heading,
+            timestampNanos = maxOf(accelerometerTimestampNanos, magnetometerTimestampNanos),
+            lowAccuracy = magnetometerAccuracy == SensorManager.SENSOR_STATUS_UNRELIABLE
+        )
     }
 
-    private fun applyLowPassFilter(input: FloatArray, output: FloatArray) {
-        val alpha = 0.10f
+    private fun applyLowPassFilter(
+        input: FloatArray,
+        output: FloatArray,
+        previousTimestampNanos: Long,
+        currentTimestampNanos: Long,
+        initialized: Boolean
+    ) {
+        if (!initialized) {
+            for (i in 0 until minOf(input.size, output.size)) {
+                output[i] = input[i]
+            }
+            return
+        }
+        val deltaSeconds = ((currentTimestampNanos - previousTimestampNanos) / 1_000_000_000f)
+            .takeIf { it > 0f && it <= MAX_SENSOR_SAMPLE_GAP_SECONDS }
+        val alpha = deltaSeconds?.let {
+            1f - exp(-it / SENSOR_FILTER_TIME_CONSTANT_SECONDS)
+        } ?: 1f
         for (i in 0 until minOf(input.size, output.size)) {
             output[i] = output[i] + alpha * (input[i] - output[i])
         }
     }
 
-
-    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
+        if (sensor?.type == Sensor.TYPE_MAGNETIC_FIELD) {
+            magnetometerAccuracy = accuracy
+        }
+    }
 
     private fun calculateHeadingFromRotationVector(values: FloatArray): Float? {
-        if (values.isEmpty()) return null
-        val safeLen = minOf(values.size, 4)
-        for (i in 0 until safeLen) {
+        if (values.size < 3) return null
+        val componentCount = minOf(values.size, 4)
+        for (i in 0 until componentCount) {
             if (!values[i].isFinite()) return null
         }
-        val safeValues = if (values.size > 4) values.sliceArray(0 until safeLen) else values
+        val safeValues = if (componentCount == 4) {
+            var normSquared = 0f
+            for (i in 0 until 4) {
+                normSquared += values[i] * values[i]
+            }
+            if (!normSquared.isFinite() || normSquared !in 0.25f..2.25f) return null
+            val inverseNorm = 1f / sqrt(normSquared)
+            for (i in 0 until 4) {
+                rotationVector4[i] = values[i] * inverseNorm
+            }
+            rotationVector4
+        } else {
+            val vectorNormSquared =
+                values[0] * values[0] + values[1] * values[1] + values[2] * values[2]
+            if (!vectorNormSquared.isFinite() || vectorNormSquared > 1.05f) return null
+            for (i in 0 until 3) {
+                rotationVector3[i] = values[i]
+            }
+            rotationVector3
+        }
 
         return runCatching {
             SensorManager.getRotationMatrixFromVector(rotationMatrix, safeValues)
-            val (xAxis, yAxis) = when (getDisplayRotation()) {
-                android.view.Surface.ROTATION_90 -> Pair(SensorManager.AXIS_Y, SensorManager.AXIS_MINUS_X)
-                android.view.Surface.ROTATION_180 -> Pair(SensorManager.AXIS_MINUS_X, SensorManager.AXIS_MINUS_Y)
-                android.view.Surface.ROTATION_270 -> Pair(SensorManager.AXIS_MINUS_Y, SensorManager.AXIS_X)
-                else -> Pair(SensorManager.AXIS_X, SensorManager.AXIS_Y)
-            }
-            SensorManager.remapCoordinateSystem(
-                rotationMatrix,
-                xAxis,
-                yAxis,
-                remappedRotationMatrix
-            )
+            if (!remapRotationMatrixForDisplay()) return null
             SensorManager.getOrientation(remappedRotationMatrix, orientationAngles)
             val heading = Math.toDegrees(orientationAngles[0].toDouble()).toFloat()
             if (!heading.isFinite()) return null
             normalizeTo360(heading)
         }.getOrNull()
+    }
+
+    private fun remapRotationMatrixForDisplay(): Boolean {
+        val xAxis: Int
+        val yAxis: Int
+        when (getDisplayRotation()) {
+            android.view.Surface.ROTATION_90 -> {
+                xAxis = SensorManager.AXIS_Y
+                yAxis = SensorManager.AXIS_MINUS_X
+            }
+            android.view.Surface.ROTATION_180 -> {
+                xAxis = SensorManager.AXIS_MINUS_X
+                yAxis = SensorManager.AXIS_MINUS_Y
+            }
+            android.view.Surface.ROTATION_270 -> {
+                xAxis = SensorManager.AXIS_MINUS_Y
+                yAxis = SensorManager.AXIS_X
+            }
+            else -> {
+                xAxis = SensorManager.AXIS_X
+                yAxis = SensorManager.AXIS_Y
+            }
+        }
+        return SensorManager.remapCoordinateSystem(
+            rotationMatrix,
+            xAxis,
+            yAxis,
+            remappedRotationMatrix
+        )
+    }
+
+    private fun acceptHeadingSample(
+        heading: Float,
+        timestampNanos: Long,
+        lowAccuracy: Boolean
+    ) {
+        if (!heading.isFinite()) return
+        if (hasHeadingSample &&
+            lastAcceptedHeadingTimestampNanos > 0L &&
+            timestampNanos > lastAcceptedHeadingTimestampNanos
+        ) {
+            val deltaSeconds =
+                (timestampNanos - lastAcceptedHeadingTimestampNanos) / 1_000_000_000f
+            if (deltaSeconds <= MAX_SENSOR_SAMPLE_GAP_SECONDS) {
+                val maximumDelta =
+                    MAX_RAW_ANGULAR_SPEED_DEGREES_PER_SECOND * deltaSeconds +
+                        RAW_HEADING_JUMP_ALLOWANCE_DEGREES
+                if (abs(normalizeRotation(heading - targetHeadingDegrees)) > maximumDelta) {
+                    return
+                }
+            }
+        }
+
+        targetHeadingDegrees = heading
+        isLatestHeadingLowAccuracy = lowAccuracy
+        lastAcceptedHeadingTimestampNanos = timestampNanos
+        if (!hasHeadingSample) {
+            headingDegrees = heading
+            hasHeadingSample = true
+        }
+    }
+
+    private fun resetCompassTracking() {
+        hasHeadingSample = false
+        targetHeadingDegrees = headingDegrees
+        lastAcceptedHeadingTimestampNanos = 0L
+        lastCompassFrameTimestampNanos = 0L
+        isLatestHeadingLowAccuracy = false
+        hasAccelerometerSample = false
+        hasMagnetometerSample = false
+        accelerometerTimestampNanos = 0L
+        magnetometerTimestampNanos = 0L
+        magnetometerAccuracy = SensorManager.SENSOR_STATUS_UNRELIABLE
+        hasRenderedArrowRotation = false
+    }
+
+    private fun startCompassFrameLoop() {
+        if (isCompassFrameLoopRunning) return
+        isCompassFrameLoopRunning = true
+        lastCompassFrameTimestampNanos = 0L
+        Choreographer.getInstance().postFrameCallback(compassFrameCallback)
+    }
+
+    private fun stopCompassFrameLoop() {
+        if (!isCompassFrameLoopRunning) return
+        isCompassFrameLoopRunning = false
+        lastCompassFrameTimestampNanos = 0L
+        Choreographer.getInstance().removeFrameCallback(compassFrameCallback)
+    }
+
+    private fun renderCompassFrame(frameTimeNanos: Long) {
+        if (!hasHeadingSample) return
+        if (lastCompassFrameTimestampNanos == 0L) {
+            lastCompassFrameTimestampNanos = frameTimeNanos
+            updateArrowRotationOnly()
+            return
+        }
+
+        val deltaSeconds = ((frameTimeNanos - lastCompassFrameTimestampNanos) / 1_000_000_000f)
+            .coerceIn(0f, MAX_FRAME_DELTA_SECONDS)
+        lastCompassFrameTimestampNanos = frameTimeNanos
+        if (deltaSeconds <= 0f) return
+
+        if (isCompassSmoothingEnabled) {
+            val timeConstant = if (isLatestHeadingLowAccuracy) {
+                LOW_ACCURACY_SMOOTHING_TIME_CONSTANT_SECONDS
+            } else {
+                COMPASS_SMOOTHING_TIME_CONSTANT_SECONDS
+            }
+            val delta = normalizeRotation(targetHeadingDegrees - headingDegrees)
+            val alpha = 1f - exp(-deltaSeconds / timeConstant)
+            val maximumStep = MAX_RENDERED_ANGULAR_SPEED_DEGREES_PER_SECOND * deltaSeconds
+            val step = (delta * alpha).coerceIn(-maximumStep, maximumStep)
+            headingDegrees = if (abs(delta) < 0.01f) {
+                targetHeadingDegrees
+            } else {
+                normalizeTo360(headingDegrees + step)
+            }
+        } else {
+            headingDegrees = targetHeadingDegrees
+        }
+        updateArrowRotationOnly()
+    }
+
+    private fun updateArrowRotationOnly() {
+        if (loadingArrowAnimator != null || store.isDestinationAnswered()) return
+        val bearing = cachedDestinationBearingDegrees ?: return
+        if (!bearing.isFinite() || !headingDegrees.isFinite()) return
+
+        val desiredRotation = normalizeTo360(
+            bearing - headingDegrees - ARROW_IMAGE_FORWARD_OFFSET_DEGREES
+        )
+        renderedArrowRotationDegrees = if (hasRenderedArrowRotation) {
+            renderedArrowRotationDegrees + normalizeRotation(
+                desiredRotation - normalizeTo360(renderedArrowRotationDegrees)
+            )
+        } else {
+            hasRenderedArrowRotation = true
+            desiredRotation
+        }
+        arrowView.rotation = renderedArrowRotationDegrees
     }
 
     private fun Float.isFinite(): Boolean {
@@ -844,12 +1097,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         if (!value.isFinite()) return 0f
         val mod = value % 360f
         return if (mod < 0f) mod + 360f else mod
-    }
-
-    private fun smoothAngleDegrees(current: Float, target: Float, alpha: Float): Float {
-        val clampedAlpha = alpha.coerceIn(0f, 1f)
-        val delta = normalizeRotation(target - current)
-        return normalizeTo360(current + (delta * clampedAlpha))
     }
 
     private fun isValidDestination(destination: Destination): Boolean {

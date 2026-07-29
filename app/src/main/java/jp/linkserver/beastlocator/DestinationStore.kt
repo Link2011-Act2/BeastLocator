@@ -179,12 +179,15 @@ class DestinationStore(context: Context) {
     }
 
     fun setLiveUpdateAnchorDistanceMeters(distanceMeters: Float) {
+        val clamped = distanceMeters.coerceAtLeast(0f)
+        if (getLiveUpdateAnchorDistanceMeters() == clamped) return
         prefs.edit()
-            .putFloat(KEY_LIVE_UPDATE_ANCHOR_DISTANCE_METERS, distanceMeters.coerceAtLeast(0f))
+            .putFloat(KEY_LIVE_UPDATE_ANCHOR_DISTANCE_METERS, clamped)
             .apply()
     }
 
     fun clearLiveUpdateAnchorDistanceMeters() {
+        if (!prefs.contains(KEY_LIVE_UPDATE_ANCHOR_DISTANCE_METERS)) return
         prefs.edit().remove(KEY_LIVE_UPDATE_ANCHOR_DISTANCE_METERS).apply()
     }
 
@@ -339,6 +342,47 @@ class DestinationStore(context: Context) {
         )
     }
 
+    fun getRegisteredGeofenceDestination(): Destination? {
+        if (!prefs.contains(KEY_REGISTERED_GEOFENCE_LAT) || !prefs.contains(KEY_REGISTERED_GEOFENCE_LNG)) {
+            return null
+        }
+        return Destination(
+            java.lang.Double.longBitsToDouble(prefs.getLong(KEY_REGISTERED_GEOFENCE_LAT, 0L)),
+            java.lang.Double.longBitsToDouble(prefs.getLong(KEY_REGISTERED_GEOFENCE_LNG, 0L))
+        )
+    }
+
+    fun setRegisteredGeofenceDestination(destination: Destination) {
+        if (isSameRegisteredGeofenceDestination(destination)) return
+        prefs.edit()
+            .putLong(
+                KEY_REGISTERED_GEOFENCE_LAT,
+                java.lang.Double.doubleToRawLongBits(destination.lat)
+            )
+            .putLong(
+                KEY_REGISTERED_GEOFENCE_LNG,
+                java.lang.Double.doubleToRawLongBits(destination.lng)
+            )
+            .apply()
+    }
+
+    fun clearRegisteredGeofenceDestination() {
+        if (!prefs.contains(KEY_REGISTERED_GEOFENCE_LAT) &&
+            !prefs.contains(KEY_REGISTERED_GEOFENCE_LNG)
+        ) {
+            return
+        }
+        prefs.edit()
+            .remove(KEY_REGISTERED_GEOFENCE_LAT)
+            .remove(KEY_REGISTERED_GEOFENCE_LNG)
+            .apply()
+    }
+
+    fun isSameRegisteredGeofenceDestination(destination: Destination): Boolean {
+        val registered = getRegisteredGeofenceDestination() ?: return false
+        return registered.lat == destination.lat && registered.lng == destination.lng
+    }
+
     companion object {
         private const val KEY_RADIUS_KM = "radius_km"
         private const val KEY_DEBUG_DEST_OVERRIDE_ENABLED = "debug_dest_override_enabled"
@@ -372,6 +416,8 @@ class DestinationStore(context: Context) {
         private const val KEY_BACKGROUND_PERMISSION_GUIDE_SHOWN = "background_permission_guide_shown"
         private const val KEY_WELCOME_COMPLETED = "welcome_completed"
         private const val KEY_ARRIVAL_DESTINATION_NAME = "arrival_destination_name"
+        private const val KEY_REGISTERED_GEOFENCE_LAT = "registered_geofence_lat"
+        private const val KEY_REGISTERED_GEOFENCE_LNG = "registered_geofence_lng"
         private const val DEFAULT_LIVE_UPDATE_START_DISTANCE_METERS = 300
         private const val MIN_LIVE_UPDATE_START_DISTANCE_METERS = 200
         private const val MAX_LIVE_UPDATE_START_DISTANCE_METERS = 5000
@@ -383,4 +429,3 @@ class DestinationStore(context: Context) {
         private const val DEFAULT_DEST_LNG = 139.669717
     }
 }
-

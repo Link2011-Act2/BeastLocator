@@ -29,6 +29,8 @@ class ForegroundDistanceMonitorService : Service() {
     private var lastIntervalBucket: Int? = null
     private var previousDistanceMeters: Float? = null
     private var lastWidgetUpdateTimeMs: Long = 0L
+    private var isForegroundStarted = false
+    private var isRequestingLocationUpdates = false
 
     private val locationRequest = LocationRequest.Builder(
         Priority.PRIORITY_HIGH_ACCURACY,
@@ -83,48 +85,61 @@ class ForegroundDistanceMonitorService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (!store.isBackgroundLocationUpdateActive() || !hasLocationPermission()) {
+        if (!BackgroundLocationUpdater.shouldRunForegroundMonitor(this)) {
             stopSelf()
             return START_NOT_STICKY
         }
 
-        val notification = buildServiceNotification()
-        val foregroundStarted = runCatching {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(
-                    NOTIFICATION_ID,
-                    notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION or
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-                )
-            } else {
-                startForeground(NOTIFICATION_ID, notification)
+        if (!isForegroundStarted) {
+            val notification = buildServiceNotification()
+            val foregroundStarted = runCatching {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    startForeground(
+                        NOTIFICATION_ID,
+                        notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION or
+                            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                    )
+                } else {
+                    startForeground(NOTIFICATION_ID, notification)
+                }
+            }.isSuccess
+            if (!foregroundStarted) {
+                stopSelf()
+                return START_NOT_STICKY
             }
-        }.isSuccess
-        if (!foregroundStarted) {
-            stopSelf()
-            return START_NOT_STICKY
+            isForegroundStarted = true
         }
         startLocationUpdates()
         return START_STICKY
     }
 
     override fun onDestroy() {
+        if (isRequestingLocationUpdates) {
+            fusedClient.removeLocationUpdates(locationCallback)
+            isRequestingLocationUpdates = false
+        }
+        if (isForegroundStarted) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            isForegroundStarted = false
+        }
         super.onDestroy()
-        fusedClient.removeLocationUpdates(locationCallback)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     @SuppressLint("MissingPermission")
     private fun startLocationUpdates() {
-        if (!hasLocationPermission()) return
+        if (isRequestingLocationUpdates || !hasLocationPermission()) return
+        isRequestingLocationUpdates = true
         runCatching {
             fusedClient.requestLocationUpdates(locationRequest, locationCallback, mainLooper)
                 .addOnFailureListener {
+                    isRequestingLocationUpdates = false
                     stopSelf()
                 }
         }.onFailure {
+            isRequestingLocationUpdates = false
             stopSelf()
         }
     }

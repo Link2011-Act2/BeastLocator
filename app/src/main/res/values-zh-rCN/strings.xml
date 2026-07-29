@@ -109,10 +109,12 @@
     <string name="about_dev_channel_dialog_title">开发频道: %1$s</string>
     <string name="about_dev_channel_value_intdev">内部验证版</string>
     <string name="about_dev_channel_value_beta">测试版</string>
+    <string name="about_dev_channel_value_rc">发布候选版</string>
     <string name="about_dev_channel_value_stable">稳定版</string>
     <string name="about_dev_channel_value_unknown">未知</string>
     <string name="about_dev_channel_desc_intdev">IntDev是用于内部验证的版本，仅对开发人员和部分成员开放，可能包含规格变更或不稳定的行为，并包括调试菜单</string>
     <string name="about_dev_channel_desc_dev">Beta是预发布版本，会在GitHub等平台公开，但可能会出现不稳定的行为，并包含调试菜单</string>
+    <string name="about_dev_channel_desc_rc">RC 是发布候选版，属于接近正式发布的预发布版本。如果发现严重问题，内容仍可能发生变更，并且可能包含调试功能。</string>
     <string name="about_dev_channel_desc_stable">Stable是稳定版，经过充分的错误验证后发布，运行稳定，已移除开发者功能等</string>
     <string name="about_dev_channel_desc_unknown">此频道的说明尚未注册</string>
     <string name="about_simple_version_title">版本</string>

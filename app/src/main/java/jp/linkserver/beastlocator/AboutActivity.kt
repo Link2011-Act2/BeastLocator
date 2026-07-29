@@ -118,6 +118,7 @@ class AboutActivity : AppCompatActivity() {
         val messageResId = when {
             normalized.equals("IntDev", ignoreCase = true) -> R.string.about_dev_channel_desc_intdev
             normalized.equals("Beta", ignoreCase = true) -> R.string.about_dev_channel_desc_dev
+            isReleaseCandidateChannel(normalized) -> R.string.about_dev_channel_desc_rc
             normalized.equals("Stable", ignoreCase = true) -> R.string.about_dev_channel_desc_stable
             else -> R.string.about_dev_channel_desc_unknown
         }
@@ -212,9 +213,16 @@ class AboutActivity : AppCompatActivity() {
         return when {
             normalized.equals("IntDev", ignoreCase = true) -> getString(R.string.about_dev_channel_value_intdev)
             normalized.equals("Beta", ignoreCase = true) -> getString(R.string.about_dev_channel_value_beta)
+            isReleaseCandidateChannel(normalized) -> getString(R.string.about_dev_channel_value_rc)
             normalized.equals("Stable", ignoreCase = true) -> getString(R.string.about_dev_channel_value_stable)
             else -> getString(R.string.about_dev_channel_value_unknown)
         }
+    }
+
+    private fun isReleaseCandidateChannel(channelName: String): Boolean {
+        val normalized = channelName.trim()
+        if (normalized.length < 2) return false
+        return normalized.startsWith("RC", ignoreCase = true)
     }
 }
 

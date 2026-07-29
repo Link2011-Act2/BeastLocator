@@ -11,20 +11,32 @@ import com.google.android.gms.location.LocationServices
 
 object BackgroundLocationUpdater {
     const val ACTION_LOCATION_UPDATE = "jp.linkserver.beastlocator.ACTION_LOCATION_UPDATE"
+    @Volatile
+    private var isForegroundClientActive = false
+
+    fun setForegroundClientActive(context: Context, active: Boolean) {
+        if (isForegroundClientActive == active) return
+        isForegroundClientActive = active
+        updateRegistration(context.applicationContext)
+    }
 
     fun updateRegistration(context: Context) {
-        val store = DestinationStore(context)
-        val shouldRunForegroundMonitor =
-            store.isBackgroundLocationUpdateActive() && hasRequiredPermission(context)
-        if (shouldRunForegroundMonitor) {
+        if (shouldRunForegroundMonitor(context)) {
             ForegroundDistanceMonitorService.start(context)
         } else {
             ForegroundDistanceMonitorService.stop(context)
         }
-        stop(context)
+        stopLegacyPendingIntentUpdates(context)
     }
 
-    private fun stop(context: Context) {
+    fun shouldRunForegroundMonitor(context: Context): Boolean {
+        val store = DestinationStore(context)
+        return !isForegroundClientActive &&
+            store.isBackgroundLocationUpdateActive() &&
+            hasRequiredPermission(context)
+    }
+
+    private fun stopLegacyPendingIntentUpdates(context: Context) {
         LocationServices.getFusedLocationProviderClient(context)
             .removeLocationUpdates(locationPendingIntent(context))
     }
@@ -58,4 +70,3 @@ object BackgroundLocationUpdater {
         )
     }
 }
-

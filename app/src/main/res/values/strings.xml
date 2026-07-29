@@ -109,10 +109,12 @@
     <string name="about_dev_channel_dialog_title">開発チャネル: %1$s</string>
     <string name="about_dev_channel_value_intdev">内部検証版</string>
     <string name="about_dev_channel_value_beta">ベータ版</string>
+    <string name="about_dev_channel_value_rc">リリース候補版</string>
     <string name="about_dev_channel_value_stable">安定版</string>
     <string name="about_dev_channel_value_unknown">不明</string>
     <string name="about_dev_channel_desc_intdev">IntDev は内部検証時に使用されます。開発者と一部のメンバーにのみ公開され、仕様変更や不安定な挙動が含まれる可能性があります。デバッグメニューが含まれています。</string>
     <string name="about_dev_channel_desc_dev">Beta はプレリリースのバージョンです。GitHubなどで公開されますが、不安定な挙動になる可能性があります。デバッグメニューが含まれています。</string>
+    <string name="about_dev_channel_desc_rc">RC はリリース候補版です。正式公開直前の検証版であり、重大な問題が見つかった場合は内容が変更される可能性があります。デバッグメニューが含まれる場合があります。</string>
     <string name="about_dev_channel_desc_stable">Stable は安定版で、すでにバグ検証などが十分に行われてから実装され、挙動が安定しています。開発者向け機能などは削除されています。</string>
     <string name="about_dev_channel_desc_unknown">このチャネルの説明は未登録です。</string>
     <string name="about_simple_version_title">バージョン</string>
@@ -130,7 +132,7 @@
     <string name="about_support_twitter_url" translatable="false">https://x.com/Link_2011A</string>
     <string name="about_update_title">更新情報</string>
     <string name="about_update_latest_format">現在のバージョン: %1$s (%2$d)</string>
-    <string name="about_update_notes">最新の更新内容:\n• 中国語の翻訳を改善\n• サポートする最小Androidバージョンを引き下げ(9 → 8.0)\n• その他のバグ修正</string>
+    <string name="about_update_notes">最新の更新内容:\n• 一部端末においてコンパスが暴れる問題を修正\n• その他のバグ修正</string>
     <string name="oss_screen_title">オープンソースライセンス</string>
     <string name="oss_button_open_url">URLを開く</string>
     <string name="oss_button_show_text">本文を表示</string>
