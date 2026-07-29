@@ -2,4 +2,8 @@
 <font-family xmlns:app="http://schemas.android.com/apk/res-auto"
     app:fontProviderAuthority="com.google.android.gms.fonts"
     app:fontProviderPackage="com.google.android.gms"
-    app:fontProviderQuery="Noto Sans Mono" />
+    app:fontProviderQuery="Noto Sans Mono"
+    app:fontProviderCerts="@array/com_google_android_gms_fonts_certs"
+    app:fontProviderFetchStrategy="async"
+    app:fontProviderFetchTimeout="500"
+    app:fontProviderSystemFontFamily="monospace" />

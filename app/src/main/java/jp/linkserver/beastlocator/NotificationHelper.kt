@@ -42,13 +42,7 @@ object NotificationHelper {
             }
         }
 
-        val openIntent = Intent(context, MainActivity::class.java)
-        val pendingIntent = PendingIntent.getActivity(
-            context,
-            20,
-            openIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
+        val pendingIntent = createMainActivityPendingIntent(context, 20)
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_arrow)
@@ -59,7 +53,11 @@ object NotificationHelper {
             .setContentIntent(pendingIntent)
             .build()
 
-        NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+        runCatching {
+            NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+        }.onFailure {
+            AppDiagnostics.warn("arrival_notification_post_failed", error = it)
+        }
     }
 
     @Synchronized
@@ -76,13 +74,7 @@ object NotificationHelper {
             }
         }
 
-        val openIntent = Intent(context, MainActivity::class.java)
-        val pendingIntent = PendingIntent.getActivity(
-            context,
-            21,
-            openIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
+        val pendingIntent = createMainActivityPendingIntent(context, 21)
 
         val clamped = progressPercent.coerceIn(0, 100)
         val body = context.getString(
@@ -273,6 +265,18 @@ object NotificationHelper {
         } else {
             ContextCompat.getColor(context, R.color.expressive_primary)
         }
+    }
+
+    private fun createMainActivityPendingIntent(context: Context, requestCode: Int): PendingIntent {
+        val openIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        return PendingIntent.getActivity(
+            context,
+            requestCode,
+            openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
     }
 }
 

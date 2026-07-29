@@ -6,17 +6,26 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import androidx.core.content.ContextCompat
+import com.google.android.gms.common.ConnectionResult
+import com.google.android.gms.common.GoogleApiAvailability
 import com.google.android.gms.location.LocationServices
 
 object BackgroundLocationUpdater {
     const val ACTION_LOCATION_UPDATE = "jp.linkserver.beastlocator.ACTION_LOCATION_UPDATE"
     @Volatile
-    private var isForegroundClientActive = false
+    private var isAppInForeground = false
+    @Volatile
+    private var hasRequestedLegacyCleanup = false
+    private var legacyCleanupToken = 0L
+    private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
 
-    fun setForegroundClientActive(context: Context, active: Boolean) {
-        if (isForegroundClientActive == active) return
-        isForegroundClientActive = active
+    fun setAppInForeground(context: Context, active: Boolean) {
+        if (isAppInForeground == active) return
+        isAppInForeground = active
+        AppDiagnostics.info("app_visibility", if (active) "foreground" else "background")
         updateRegistration(context.applicationContext)
     }
 
@@ -26,22 +35,61 @@ object BackgroundLocationUpdater {
         } else {
             ForegroundDistanceMonitorService.stop(context)
         }
-        stopLegacyPendingIntentUpdates(context)
+        if (isGoogleLocationAvailable(context)) {
+            stopLegacyPendingIntentUpdatesOnce(context)
+        }
     }
 
     fun shouldRunForegroundMonitor(context: Context): Boolean {
         val store = DestinationStore(context)
-        return !isForegroundClientActive &&
+        return !isAppInForeground &&
+            !store.isDestinationAnswered() &&
+            !store.isDebugDistanceOverrideEnabled() &&
             store.isBackgroundLocationUpdateActive() &&
-            hasRequiredPermission(context)
+            hasRequiredLocationPermissions(context) &&
+            isGoogleLocationAvailable(context)
     }
 
-    private fun stopLegacyPendingIntentUpdates(context: Context) {
-        LocationServices.getFusedLocationProviderClient(context)
-            .removeLocationUpdates(locationPendingIntent(context))
+    private fun stopLegacyPendingIntentUpdatesOnce(context: Context) {
+        if (hasRequestedLegacyCleanup) return
+        hasRequestedLegacyCleanup = true
+        val token = ++legacyCleanupToken
+        val timeout = Runnable {
+            if (token == legacyCleanupToken && hasRequestedLegacyCleanup) {
+                hasRequestedLegacyCleanup = false
+                AppDiagnostics.warn("legacy_location_cleanup_timeout")
+            }
+        }
+        mainHandler.postDelayed(timeout, LEGACY_CLEANUP_TIMEOUT_MILLIS)
+        val task = runCatching {
+            LocationServices.getFusedLocationProviderClient(context)
+                .removeLocationUpdates(locationPendingIntent(context))
+        }.getOrElse {
+            mainHandler.removeCallbacks(timeout)
+            hasRequestedLegacyCleanup = false
+            AppDiagnostics.warn("legacy_location_cleanup_threw", error = it)
+            return
+        }
+        task.addOnCompleteListener {
+            if (token != legacyCleanupToken) return@addOnCompleteListener
+            mainHandler.removeCallbacks(timeout)
+            hasRequestedLegacyCleanup = it.isSuccessful
+            if (!it.isSuccessful) {
+                AppDiagnostics.warn("legacy_location_cleanup_failed", error = it.exception)
+            }
+        }
     }
 
-    private fun hasRequiredPermission(context: Context): Boolean {
+    fun googleLocationAvailability(context: Context): Int = runCatching {
+        GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(context)
+    }.onFailure {
+        AppDiagnostics.warn("google_location_check_failed", error = it)
+    }.getOrDefault(ConnectionResult.SERVICE_INVALID)
+
+    fun isGoogleLocationAvailable(context: Context): Boolean =
+        googleLocationAvailability(context) == ConnectionResult.SUCCESS
+
+    fun hasRequiredLocationPermissions(context: Context): Boolean {
         val hasFine = ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.ACCESS_FINE_LOCATION
@@ -69,4 +117,6 @@ object BackgroundLocationUpdater {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
     }
+
+    private const val LEGACY_CLEANUP_TIMEOUT_MILLIS = 8_000L
 }

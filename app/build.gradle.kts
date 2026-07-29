@@ -8,10 +8,19 @@ import java.util.Properties
 import java.util.TimeZone
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 import org.gradle.api.artifacts.result.ResolvedArtifactResult
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.DirectoryProperty
 import org.gradle.maven.MavenModule
 import org.gradle.maven.MavenPomArtifact
+import org.gradle.api.tasks.OutputDirectory
 import java.util.zip.ZipFile
+import javax.xml.XMLConstants
 import javax.xml.parsers.DocumentBuilderFactory
+
+abstract class GenerateOssAssetsTask : DefaultTask() {
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+}
 
 plugins {
     id("com.android.application")
@@ -90,7 +99,17 @@ data class PomMetadata(
 
 fun parsePomMetadata(pomFile: File): PomMetadata {
     return runCatching {
-        val doc = DocumentBuilderFactory.newInstance()
+        val factory = DocumentBuilderFactory.newInstance().apply {
+            setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+            setFeature("http://xml.org/sax/features/external-general-entities", false)
+            setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+            setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
+            setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "")
+            setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "")
+            isXIncludeAware = false
+            isExpandEntityReferences = false
+        }
+        val doc = factory
             .newDocumentBuilder()
             .parse(pomFile)
             .apply { documentElement.normalize() }
@@ -234,7 +253,8 @@ val revisionId = "${revisionDate}_${revisionCounter.toString().padStart(6, '0')}
 val generatedOssAssetsDir = layout.buildDirectory.dir("generated/oss-assets")
 val generatedOssFile = generatedOssAssetsDir.map { it.file("oss_licenses/oss_licenses_auto.json") }
 
-val generateOssLicensesAutoJson = tasks.register("generateOssLicensesAutoJson") {
+val generateOssLicensesAutoJson = tasks.register<GenerateOssAssetsTask>("generateOssLicensesAutoJson") {
+    outputDirectory.set(generatedOssAssetsDir)
     outputs.file(generatedOssFile)
     doLast {
         val runtimeConfigurationName = listOf(
@@ -303,7 +323,14 @@ val generateOssLicensesAutoJson = tasks.register("generateOssLicensesAutoJson") 
 
         val outFile = generatedOssFile.get().asFile
         outFile.parentFile.mkdirs()
-        val generatedAt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US).format(Date())
+        val sourceDateEpochMillis = System.getenv("SOURCE_DATE_EPOCH")
+            ?.toLongOrNull()
+            ?.coerceAtLeast(0L)
+            ?.times(1_000L)
+            ?: 0L
+        val generatedAt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }.format(Date(sourceDateEpochMillis))
         val json = buildString {
             append("{\n")
             append("  \"generatedAt\": \"").append(jsonEscape(generatedAt)).append("\",\n")
@@ -334,13 +361,13 @@ android {
         buildConfig = true
     }
 
-    val appVersionName = "1.0.0-IntDev_RC0_rev0"
+    val appVersionName = "0.9.6-IntDev_rev0"
 
     defaultConfig {
         applicationId = "jp.linkserver.beastlocator"
         minSdk = 26
         targetSdk = 36
-        versionCode = 202603281   // 2026, 03, 28, 1(年、月、日、その日のうちの何個目)
+        versionCode = 202607291   // 2026, 07, 29, 1(年、月、日、その日のうちの何個目)
         versionName = appVersionName
         buildConfigField("String", "REVISION_ID", "\"$revisionId\"")
     }
@@ -360,13 +387,15 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    sourceSets.getByName("main") {
-        assets.srcDirs("build/generated/oss-assets")
-    }
 }
 
-tasks.named("preBuild").configure {
-    dependsOn(generateOssLicensesAutoJson)
+androidComponents {
+    onVariants { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(
+            generateOssLicensesAutoJson,
+            GenerateOssAssetsTask::outputDirectory
+        )
+    }
 }
 
 dependencies {
@@ -375,5 +404,7 @@ dependencies {
     implementation("com.google.android.material:material:1.13.0")
     implementation("androidx.constraintlayout:constraintlayout:2.2.1")
     implementation("androidx.activity:activity-ktx:1.13.0")
+    implementation("androidx.work:work-runtime:2.11.2")
     implementation("com.google.android.gms:play-services-location:21.3.0")
+    testImplementation("junit:junit:4.13.2")
 }

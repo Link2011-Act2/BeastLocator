@@ -8,10 +8,10 @@ object SoundEffectPlayer {
     private const val PRIORITY_114514 = 3
 
     fun play(context: Context, rawResId: Int) {
-        SoundPlaybackService.start(context, rawResId, resolvePriority(rawResId))
+        SoundPlaybackService.start(context, rawResId, priorityFor(rawResId))
     }
 
-    private fun resolvePriority(rawResId: Int): Int {
+    internal fun priorityFor(rawResId: Int): Int {
         return when (rawResId) {
             R.raw.distance_114514km -> PRIORITY_114514
             R.raw.arrival_0km -> PRIORITY_ARRIVAL

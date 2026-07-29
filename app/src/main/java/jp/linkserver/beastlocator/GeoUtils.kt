@@ -81,7 +81,7 @@ object GeoUtils {
 
     fun formatDistance(distanceMeters: Float): String {
         return if (distanceMeters >= 1000f) {
-            String.format("%.2f km", distanceMeters / 1000f)
+            String.format(Locale.getDefault(), "%.2f km", distanceMeters / 1000f)
         } else {
             "${distanceMeters.toInt()} m"
         }

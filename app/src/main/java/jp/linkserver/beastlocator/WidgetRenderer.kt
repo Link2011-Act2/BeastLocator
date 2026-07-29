@@ -7,17 +7,31 @@ import android.content.Context
 import android.content.Intent
 import android.widget.RemoteViews
 import androidx.core.content.ContextCompat
+import java.util.Locale
 
 object WidgetRenderer {
-    const val ACTION_REFRESH_WIDGETS = "jp.linkserver.beastlocator.ACTION_REFRESH_WIDGETS"
     private const val ARROW_IMAGE_FORWARD_OFFSET_DEGREES = 45f
+    private const val WIDGET_ARROW_STEP_DEGREES = 2f
+    private val renderedSignatures = mutableMapOf<WidgetKey, RenderSignature>()
+
+    private data class WidgetKey(val layoutRes: Int, val appWidgetId: Int)
+
+    private data class RenderSignature(
+        val title: String?,
+        val distance: String,
+        val isArrived: Boolean,
+        val arrowRotation: Float?
+    )
 
     fun render(
         context: Context,
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray,
-        layoutRes: Int
+        layoutRes: Int,
+        forceUpdate: Boolean = true
     ) {
+        if (appWidgetIds.isEmpty()) return
+
         val store = DestinationStore(context)
         val current = store.getLastKnownLocation()
         val target = store.getDestination()
@@ -60,9 +74,28 @@ object WidgetRenderer {
                 GeoUtils.cardinalFromBearing(absoluteBearing)
             )
         }
-        val arrowRotation = normalizeTo360(displayBearing - ARROW_IMAGE_FORWARD_OFFSET_DEGREES)
+        val arrowRotation = quantizeRotation(
+            displayBearing - ARROW_IMAGE_FORWARD_OFFSET_DEGREES
+        )
+        val signature = RenderSignature(
+            title = titleText.toString().takeUnless { isSmallLayout },
+            distance = (if (isArrived) arrivalText else normalDistanceText).toString(),
+            isArrived = isArrived,
+            arrowRotation = arrowRotation.takeUnless { isArrived }
+        )
 
         appWidgetIds.forEach { id ->
+            val key = WidgetKey(layoutRes, id)
+            val shouldUpdate = synchronized(renderedSignatures) {
+                if (!forceUpdate && renderedSignatures[key] == signature) {
+                    false
+                } else {
+                    renderedSignatures[key] = signature
+                    true
+                }
+            }
+            if (!shouldUpdate) return@forEach
+
             val isSmall = isSmallLayout
             val views = RemoteViews(context.packageName, layoutRes)
             if (isSmall) {
@@ -115,30 +148,83 @@ object WidgetRenderer {
                 PendingIntent.getActivity(
                     context,
                     id,
-                    Intent(context, MainActivity::class.java),
+                    Intent(context, MainActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    },
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
             )
-            appWidgetManager.updateAppWidget(id, views)
+            runCatching { appWidgetManager.updateAppWidget(id, views) }
+                .onFailure {
+                    synchronized(renderedSignatures) {
+                        if (renderedSignatures[key] == signature) {
+                            renderedSignatures.remove(key)
+                        }
+                    }
+                }
         }
     }
 
     fun refreshAllWidgets(context: Context) {
-        val manager = AppWidgetManager.getInstance(context)
-        val smallIds = manager.getAppWidgetIds(
-            ComponentName(context, DestinationWidgetProvider::class.java)
-        )
-        val largeIds = manager.getAppWidgetIds(
-            ComponentName(context, DestinationWidgetProviderLarge::class.java)
-        )
-        render(context, manager, smallIds, R.layout.widget_small)
-        render(context, manager, largeIds, R.layout.widget_large)
+        runCatching {
+            val manager = AppWidgetManager.getInstance(context)
+            val smallIds = manager.getAppWidgetIds(
+                ComponentName(context, DestinationWidgetProvider::class.java)
+            )
+            val largeIds = manager.getAppWidgetIds(
+                ComponentName(context, DestinationWidgetProviderLarge::class.java)
+            )
+            if (smallIds.isEmpty() && largeIds.isEmpty()) {
+                synchronized(renderedSignatures) { renderedSignatures.clear() }
+                return@runCatching
+            }
+            if (smallIds.isNotEmpty()) {
+                render(
+                    context,
+                    manager,
+                    smallIds,
+                    R.layout.widget_small,
+                    forceUpdate = false
+                )
+            }
+            if (largeIds.isNotEmpty()) {
+                render(
+                    context,
+                    manager,
+                    largeIds,
+                    R.layout.widget_large,
+                    forceUpdate = false
+                )
+            }
+
+            val activeKeys = buildSet {
+                smallIds.forEach { add(WidgetKey(R.layout.widget_small, it)) }
+                largeIds.forEach { add(WidgetKey(R.layout.widget_large, it)) }
+            }
+            synchronized(renderedSignatures) {
+                renderedSignatures.keys.retainAll(activeKeys)
+            }
+        }.onFailure {
+            AppDiagnostics.warn("widget_refresh_failed", error = it)
+        }
+    }
+
+    fun forgetWidgets(appWidgetIds: IntArray) {
+        if (appWidgetIds.isEmpty()) return
+        val removedIds = appWidgetIds.toSet()
+        synchronized(renderedSignatures) {
+            renderedSignatures.keys.removeAll { it.appWidgetId in removedIds }
+        }
     }
 
     private fun formatWidgetDistance(distanceMeters: Float): String {
         return if (distanceMeters >= 1000f) {
             val km = distanceMeters / 1000f
-            if (km >= 100f) String.format("%.0f km", km) else String.format("%.1f km", km)
+            if (km >= 100f) {
+                String.format(Locale.getDefault(), "%.0f km", km)
+            } else {
+                String.format(Locale.getDefault(), "%.1f km", km)
+            }
         } else {
             "${distanceMeters.toInt()} m"
         }
@@ -148,6 +234,13 @@ object WidgetRenderer {
         if (!value.isFinite()) return 0f
         val mod = value % 360f
         return if (mod < 0f) mod + 360f else mod
+    }
+
+    private fun quantizeRotation(value: Float): Float {
+        val normalized = normalizeTo360(value)
+        val stepped = kotlin.math.round(normalized / WIDGET_ARROW_STEP_DEGREES) *
+            WIDGET_ARROW_STEP_DEGREES
+        return normalizeTo360(stepped)
     }
 
     private fun isValidDestination(destination: Destination): Boolean {

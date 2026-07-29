@@ -77,10 +77,10 @@
     <string name="background_location_section_title">Background Updates</string>
     <string name="background_location_section_help">Settings for background operation</string>
     <string name="background_location_update_toggle">Update location in background</string>
-    <string name="background_location_update_help">Updating location as a background app helps you receive notifications more reliably.</string>
+    <string name="background_location_update_help">Monitors your approach to the destination while the app is closed. A location notification is shown while active.</string>
     <string name="background_location_update_help_forced">This setting is always ON because the audio playback feature is enabled.</string>
     <string name="background_location_update_warning_title">⚠️ Battery Consumption Warning</string>
-    <string name="background_location_update_warning_message">While background operation is beneficial for widget updates and notifications, it may drain the battery faster.</string>
+    <string name="background_location_update_warning_message">This uses your location while the app is closed and shows a notification while active. Battery use may increase depending on your device and usage time.</string>
     <string name="widget_bearing_mode_title">Widget Bearing Mode</string>
     <string name="widget_bearing_mode_absolute">Absolute (North-based)</string>
     <string name="widget_bearing_mode_relative">Relative (Device-based)</string>
@@ -109,12 +109,12 @@
     <string name="about_dev_channel_dialog_title">Development Channel: %1$s</string>
     <string name="about_dev_channel_value_intdev">Internal Testing Build</string>
     <string name="about_dev_channel_value_beta">Beta Build</string>
-    <string name="about_dev_channel_value_rc">Release Candidate Build</string>
+    <string name="about_dev_channel_value_prerelease">Pre-release Build</string>
     <string name="about_dev_channel_value_stable">Stable Build</string>
     <string name="about_dev_channel_value_unknown">Unknown</string>
     <string name="about_dev_channel_desc_intdev">IntDev is used for internal testing. It is only available to developers and selected members, and may include specification changes or unstable behavior. Includes a debug menu.</string>
     <string name="about_dev_channel_desc_dev">Beta is a pre-release version. It is published on GitHub and other platforms but may exhibit unstable behavior. Includes a debug menu.</string>
-    <string name="about_dev_channel_desc_rc">RC is a release candidate build. It is a near-final pre-release build, but may still change if critical issues are found. It may include debug features.</string>
+    <string name="about_dev_channel_desc_prerelease">Pre-release is a testing build published before the stable release. It may contain new features, but stability is not guaranteed.</string>
     <string name="about_dev_channel_desc_stable">Stable is the production version, released after thorough bug verification for reliable performance. Developer features have been removed.</string>
     <string name="about_dev_channel_desc_unknown">No description for this channel.</string>
     <string name="about_simple_version_title">Version</string>
@@ -143,6 +143,7 @@
     <string name="license_google_terms_body">Google Play services Location API is provided under Google Play services terms.\n\nThis is not distributed as a typical OSS license text in this app.\nPlease refer to Google\'s official terms and policies for details.</string>
     <string name="oss_open_failed">Failed to open URL</string>
     <string name="language_settings_open_failed">Failed to open Language Settings</string>
+    <string name="external_link_open_failed">Unable to open the link</string>
     <string name="oss_auto_load_failed">Failed to load auto-generated licenses.</string>
     <string name="oss_unknown_license">License not specified</string>
     <string name="oss_unknown_url">No URL</string>

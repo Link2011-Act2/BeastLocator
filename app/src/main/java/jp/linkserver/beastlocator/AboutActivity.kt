@@ -19,21 +19,22 @@ class AboutActivity : AppCompatActivity() {
         setContentView(R.layout.activity_about)
 
         val (versionName, versionCode) = resolveAppVersionInfo()
-        val (simpleVersion, channelName) = splitVersionAndChannel(versionName)
-        val channelLabel = resolveChannelLabel(channelName)
+        val (simpleVersion, _) = splitVersionAndChannel(versionName)
+        val channel = ReleaseChannelDetector.detect(versionName)
+        val channelLabel = resolveChannelLabel(channel)
         findViewById<TextView>(R.id.aboutVersionText).text =
             getString(R.string.about_version_label, channelLabel, versionName, versionCode)
         findViewById<TextView>(R.id.aboutDevChannelText).text =
-            channelName
+            channelLabel
         findViewById<TextView>(R.id.aboutSimpleVersionText).text =
             getString(R.string.about_simple_version_value, simpleVersion)
         findViewById<TextView>(R.id.aboutUpdateVersionText).text =
             getString(R.string.about_update_latest_format, versionName, versionCode)
         findViewById<android.widget.FrameLayout>(R.id.aboutDevChannelCard).setOnClickListener {
-            showDevChannelDescription(channelName)
+            showDevChannelDescription(channel, channelLabel)
         }
         findViewById<android.widget.FrameLayout>(R.id.aboutSimpleVersionCard).setOnClickListener {
-            showVersionDetailsDialog(versionName, versionCode, channelName)
+            showVersionDetailsDialog(versionName, versionCode, channel)
         }
 
         findViewById<LinearLayout>(R.id.openOssLicensesCard).setOnClickListener {
@@ -113,24 +114,27 @@ class AboutActivity : AppCompatActivity() {
         return Pair(coreVersion.ifBlank { versionName }, channel.ifBlank { "unknown" })
     }
 
-    private fun showDevChannelDescription(channelName: String) {
-        val normalized = channelName.trim()
-        val messageResId = when {
-            normalized.equals("IntDev", ignoreCase = true) -> R.string.about_dev_channel_desc_intdev
-            normalized.equals("Beta", ignoreCase = true) -> R.string.about_dev_channel_desc_dev
-            isReleaseCandidateChannel(normalized) -> R.string.about_dev_channel_desc_rc
-            normalized.equals("Stable", ignoreCase = true) -> R.string.about_dev_channel_desc_stable
-            else -> R.string.about_dev_channel_desc_unknown
+    private fun showDevChannelDescription(channel: ReleaseChannel, channelLabel: String) {
+        val messageResId = when (channel) {
+            ReleaseChannel.INTDEV -> R.string.about_dev_channel_desc_intdev
+            ReleaseChannel.BETA -> R.string.about_dev_channel_desc_dev
+            ReleaseChannel.PRE_RELEASE -> R.string.about_dev_channel_desc_prerelease
+            ReleaseChannel.RELEASE -> R.string.about_dev_channel_desc_stable
+            ReleaseChannel.UNKNOWN -> R.string.about_dev_channel_desc_unknown
         }
         MaterialAlertDialogBuilder(this)
-            .setTitle(getString(R.string.about_dev_channel_dialog_title, normalized))
+            .setTitle(getString(R.string.about_dev_channel_dialog_title, channelLabel))
             .setMessage(messageResId)
             .setPositiveButton(android.R.string.ok, null)
             .show()
     }
 
-    private fun showVersionDetailsDialog(versionName: String, versionCode: Int, channelName: String) {
-        val isStable = channelName.equals("Stable", ignoreCase = true)
+    private fun showVersionDetailsDialog(
+        versionName: String,
+        versionCode: Int,
+        channel: ReleaseChannel
+    ) {
+        val isStable = channel == ReleaseChannel.RELEASE
         if (!isStable) {
             val message = getString(
                 R.string.about_version_details_message,
@@ -208,21 +212,13 @@ class AboutActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun resolveChannelLabel(channelName: String): String {
-        val normalized = channelName.trim()
-        return when {
-            normalized.equals("IntDev", ignoreCase = true) -> getString(R.string.about_dev_channel_value_intdev)
-            normalized.equals("Beta", ignoreCase = true) -> getString(R.string.about_dev_channel_value_beta)
-            isReleaseCandidateChannel(normalized) -> getString(R.string.about_dev_channel_value_rc)
-            normalized.equals("Stable", ignoreCase = true) -> getString(R.string.about_dev_channel_value_stable)
-            else -> getString(R.string.about_dev_channel_value_unknown)
+    private fun resolveChannelLabel(channel: ReleaseChannel): String {
+        return when (channel) {
+            ReleaseChannel.INTDEV -> getString(R.string.about_dev_channel_value_intdev)
+            ReleaseChannel.BETA -> getString(R.string.about_dev_channel_value_beta)
+            ReleaseChannel.PRE_RELEASE -> getString(R.string.about_dev_channel_value_prerelease)
+            ReleaseChannel.RELEASE -> getString(R.string.about_dev_channel_value_stable)
+            ReleaseChannel.UNKNOWN -> getString(R.string.about_dev_channel_value_unknown)
         }
     }
-
-    private fun isReleaseCandidateChannel(channelName: String): Boolean {
-        val normalized = channelName.trim()
-        if (normalized.length < 2) return false
-        return normalized.startsWith("RC", ignoreCase = true)
-    }
 }
-

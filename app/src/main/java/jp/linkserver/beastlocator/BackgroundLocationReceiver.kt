@@ -5,88 +5,67 @@ import android.content.Context
 import android.content.Intent
 import com.google.android.gms.location.LocationResult
 
+/**
+ * Compatibility receiver for location PendingIntents created by older versions of the app.
+ * New background tracking is service-based, but a queued legacy update can still arrive until
+ * Google Play services confirms its removal.
+ */
 class BackgroundLocationReceiver : BroadcastReceiver() {
-    companion object {
-        private const val ARRIVAL_THRESHOLD_METERS = 50f
-    }
-
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != BackgroundLocationUpdater.ACTION_LOCATION_UPDATE) return
         val result = LocationResult.extractResult(intent) ?: return
-        val location = result.lastLocation ?: return
+        val appContext = context.applicationContext
+        val store = DestinationStore(appContext)
 
-        val store = DestinationStore(context)
         if (store.isDebugDistanceOverrideEnabled()) {
-            DestinationWidgetProvider.refreshAllWidgets(context)
+            GeofenceHelper.clearDestinationGeofence(appContext)
+            DestinationWidgetProvider.refreshAllWidgets(appContext)
             return
         }
-        val current = Destination(location.latitude, location.longitude)
-        store.setLastKnownLocationFromSystem(current.lat, current.lng)
-        if (location.hasBearing()) {
-            store.setLastKnownHeading(location.bearing)
-        }
 
-        val destination = store.getDestination()
-        if (!store.isDestinationAnswered()) {
-            GeofenceHelper.registerDestinationGeofence(context, destination)
-        } else {
-            GeofenceHelper.clearDestinationGeofence(context)
+        var lastAcceptedDistance: Float? = null
+        var acceptedAnySample = false
+        val sampleGate = LocationSampleGate().apply {
+            reset(store.getLastKnownLocationSample())
         }
+        for (location in result.locations) {
+            val sample = LocationSampleFactory.fromAndroidLocation(
+                location,
+                LocationSampleSource.CONTINUOUS
+            ) ?: continue
+            if (!sampleGate.accept(sample)) continue
+            acceptedAnySample = true
+            store.setLastKnownLocation(sample)
 
-        val distance = GeoUtils.distanceMeters(current, destination)
-        if (store.isArrivalRearmRequired() && distance > ARRIVAL_THRESHOLD_METERS) {
-            store.setArrivalRearmRequired(false)
-        }
-        if (handleArrivalByDistance(context, store, destination, distance)) {
-            return
-        }
-        updateApproachLiveUpdate(context, store, distance)
-        DestinationWidgetProvider.refreshAllWidgets(context)
-    }
-
-    private fun handleArrivalByDistance(
-        context: Context,
-        store: DestinationStore,
-        destination: Destination,
-        distanceMeters: Float
-    ): Boolean {
-        if (store.isDestinationAnswered()) return false
-        if (store.isArrivalRearmRequired()) return false
-        if (distanceMeters > ARRIVAL_THRESHOLD_METERS) return false
-
-        if (store.isArrivalSoundEnabled()) {
-            SoundEffectPlayer.play(context, R.raw.arrival_0km)
-        }
-        store.setDestinationAnswered(true)
-        store.setArrivalDestinationName("${destination.lat}, ${destination.lng}")
-        NotificationHelper.cancelApproachProgress(context)
-        NotificationHelper.showDestinationReached(
-            context,
-            context.getString(
-                R.string.notification_body,
-                "${destination.lat}, ${destination.lng}"
-            )
-        )
-        GeofenceHelper.clearDestinationGeofence(context)
-
-        val pending = goAsync()
-        Thread {
-            try {
-                val resolved = ReverseGeocoder.resolve(context, destination)
-                if (!store.isDestinationAnswered() || store.getDestination() != destination) {
-                    return@Thread
-                }
-                store.setArrivalDestinationName(resolved)
-                NotificationHelper.showDestinationReached(
-                    context,
-                    context.getString(R.string.notification_body, resolved)
+            val destination = store.getDestination()
+            val distanceMeters = GeoUtils.distanceMeters(sample.position, destination)
+            lastAcceptedDistance = distanceMeters
+            if (ArrivalCoordinator.observeLocation(
+                    appContext,
+                    store,
+                    sample,
+                    destination,
+                    distanceMeters
                 )
-            } finally {
-                DestinationWidgetProvider.refreshAllWidgets(context)
-                pending.finish()
+            ) {
+                break
             }
-        }.start()
-        return true
+        }
+
+        if (!acceptedAnySample) {
+            AppDiagnostics.info("legacy_location_batch_rejected")
+            return
+        }
+
+        if (!store.isDestinationAnswered()) {
+            GeofenceHelper.registerDestinationGeofence(appContext, store.getDestination())
+            lastAcceptedDistance?.let {
+                updateApproachLiveUpdate(appContext, store, it)
+            }
+        } else {
+            GeofenceHelper.clearDestinationGeofence(appContext)
+        }
+        DestinationWidgetProvider.refreshAllWidgets(appContext)
     }
 
     private fun updateApproachLiveUpdate(
@@ -104,19 +83,24 @@ class BackgroundLocationReceiver : BroadcastReceiver() {
             store.clearLiveUpdateAnchorDistanceMeters()
             return
         }
-        val startDistanceMeters = store.getLiveUpdateStartDistanceMeters().coerceIn(200, 5000).toFloat()
-        if (distanceMeters > startDistanceMeters || distanceMeters <= ARRIVAL_THRESHOLD_METERS) {
+
+        val arrivalThreshold = ArrivalConfirmationTracker.ARRIVAL_THRESHOLD_METERS
+        val startDistanceMeters = store.getLiveUpdateStartDistanceMeters()
+            .coerceIn(200, 5_000)
+            .toFloat()
+        if (distanceMeters > startDistanceMeters || distanceMeters <= arrivalThreshold) {
             NotificationHelper.cancelApproachProgress(context)
             store.clearLiveUpdateAnchorDistanceMeters()
             return
         }
+
         val anchorDistance = store.getLiveUpdateAnchorDistanceMeters()
-            ?.takeIf { it > ARRIVAL_THRESHOLD_METERS } ?: distanceMeters.also {
-            store.setLiveUpdateAnchorDistanceMeters(it)
-        }
-        val span = (anchorDistance - ARRIVAL_THRESHOLD_METERS).coerceAtLeast(1f)
-        val progress = (((anchorDistance - distanceMeters) / span) * 100f).toInt().coerceIn(0, 100)
+            ?.takeIf { it > arrivalThreshold }
+            ?: distanceMeters.also { store.setLiveUpdateAnchorDistanceMeters(it) }
+        val span = (anchorDistance - arrivalThreshold).coerceAtLeast(1f)
+        val progress = (((anchorDistance - distanceMeters) / span) * 100f)
+            .toInt()
+            .coerceIn(0, 100)
         NotificationHelper.showApproachProgress(context, distanceMeters, progress)
     }
 }
-

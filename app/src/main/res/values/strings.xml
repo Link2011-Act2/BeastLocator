@@ -77,10 +77,10 @@
     <string name="background_location_section_title">バックグラウンド更新</string>
     <string name="background_location_section_help">バックグラウンド動作に関する設定</string>
     <string name="background_location_update_toggle">バックグラウンドで位置を更新</string>
-    <string name="background_location_update_help">バックグラウンドアプリとして動作して位置を更新するため、通知が来やすくなります</string>
+    <string name="background_location_update_help">アプリを閉じている間も目的地への接近を監視します。動作中は位置情報の通知が表示されます</string>
     <string name="background_location_update_help_forced">音声再生機能が有効なため、この設定は常にオンになります</string>
     <string name="background_location_update_warning_title">⚠️バッテリー消費に関する注意</string>
-    <string name="background_location_update_warning_message">バックグラウンドにするとウィジェットの更新や通知などの面で有利ですが、バッテリーの消費が早くなる可能性があります</string>
+    <string name="background_location_update_warning_message">アプリを閉じている間も位置情報を使用し、動作中は通知を表示します。端末や利用時間によってはバッテリー消費が増えることがあります</string>
     <string name="widget_bearing_mode_title">ウィジェットの方位表示</string>
     <string name="widget_bearing_mode_absolute">絶対方位（北基準）</string>
     <string name="widget_bearing_mode_relative">相対方位（端末の向き基準）</string>
@@ -109,12 +109,12 @@
     <string name="about_dev_channel_dialog_title">開発チャネル: %1$s</string>
     <string name="about_dev_channel_value_intdev">内部検証版</string>
     <string name="about_dev_channel_value_beta">ベータ版</string>
-    <string name="about_dev_channel_value_rc">リリース候補版</string>
+    <string name="about_dev_channel_value_prerelease">プレリリース</string>
     <string name="about_dev_channel_value_stable">安定版</string>
     <string name="about_dev_channel_value_unknown">不明</string>
     <string name="about_dev_channel_desc_intdev">IntDev は内部検証時に使用されます。開発者と一部のメンバーにのみ公開され、仕様変更や不安定な挙動が含まれる可能性があります。デバッグメニューが含まれています。</string>
     <string name="about_dev_channel_desc_dev">Beta はプレリリースのバージョンです。GitHubなどで公開されますが、不安定な挙動になる可能性があります。デバッグメニューが含まれています。</string>
-    <string name="about_dev_channel_desc_rc">RC はリリース候補版です。正式公開直前の検証版であり、重大な問題が見つかった場合は内容が変更される可能性があります。デバッグメニューが含まれる場合があります。</string>
+    <string name="about_dev_channel_desc_prerelease">Pre-release は正式版の前に公開される検証版です。新機能を含むことがありますが、安定性は保証されません。</string>
     <string name="about_dev_channel_desc_stable">Stable は安定版で、すでにバグ検証などが十分に行われてから実装され、挙動が安定しています。開発者向け機能などは削除されています。</string>
     <string name="about_dev_channel_desc_unknown">このチャネルの説明は未登録です。</string>
     <string name="about_simple_version_title">バージョン</string>
@@ -143,6 +143,7 @@
     <string name="license_google_terms_body">Google Play services Location API is provided under Google Play services terms.\n\nThis is not distributed as a typical OSS license text in this app.\nPlease refer to Google\'s official terms and policies for details.</string>
     <string name="oss_open_failed">URLを開けませんでした</string>
     <string name="language_settings_open_failed">言語設定を開けませんでした</string>
+    <string name="external_link_open_failed">リンクを開けませんでした</string>
     <string name="oss_auto_load_failed">自動生成ライセンスの読み込みに失敗しました</string>
     <string name="oss_unknown_license">License not specified</string>
     <string name="oss_unknown_url">URLなし</string>

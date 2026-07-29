@@ -14,6 +14,7 @@ import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.provider.Settings
 import android.graphics.Typeface
 import android.view.Choreographer
@@ -35,6 +36,8 @@ import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import android.view.animation.LinearInterpolator
+import java.lang.ref.WeakReference
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.exp
@@ -46,17 +49,29 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         private const val ARRIVAL_THRESHOLD_METERS = 50f
         private const val DISTANCE_MASK_STEP_KM = 100
         private const val LOCATION_TIMEOUT_MS = 30_000L
+        private const val LOCATION_REQUEST_OPERATION_TIMEOUT_MILLIS = 8_000L
         private const val COMPASS_SMOOTHING_TIME_CONSTANT_SECONDS = 0.14f
         private const val LOW_ACCURACY_SMOOTHING_TIME_CONSTANT_SECONDS = 0.35f
         private const val SENSOR_FILTER_TIME_CONSTANT_SECONDS = 0.12f
         private const val MAX_RENDERED_ANGULAR_SPEED_DEGREES_PER_SECOND = 720f
+        private const val ARROW_SMOOTHING_TIME_CONSTANT_SECONDS = 0.18f
+        private const val MAX_ARROW_ANGULAR_SPEED_DEGREES_PER_SECOND = 360f
         private const val MAX_RAW_ANGULAR_SPEED_DEGREES_PER_SECOND = 1_080f
         private const val RAW_HEADING_JUMP_ALLOWANCE_DEGREES = 35f
         private const val MAX_SENSOR_SAMPLE_GAP_SECONDS = 1f
         private const val MAX_FRAME_DELTA_SECONDS = 0.05f
+        private const val COMPASS_SETTLED_EPSILON_DEGREES = 0.05f
+        private const val ARROW_SETTLED_EPSILON_DEGREES = 0.05f
+        private const val HEADING_PERSIST_INTERVAL_MILLIS = 10_000L
+        private const val COMPASS_FIRST_SAMPLE_TIMEOUT_MILLIS = 3_000L
+        private const val MIN_WIDGET_REFRESH_INTERVAL_MILLIS = 10_000L
+        private const val MAX_IDLE_WIDGET_REFRESH_INTERVAL_MILLIS = 60_000L
+        private const val MIN_WIDGET_DISTANCE_DELTA_METERS = 10f
+        private const val ARRIVAL_NAME_RETRY_INTERVAL_MILLIS = 5 * 60_000L
         private const val MAX_LEGACY_SAMPLE_SKEW_NANOS = 250_000_000L
         private val LOW_HEADING_ACCURACY_RADIANS = Math.toRadians(30.0).toFloat()
         private val REJECT_HEADING_ACCURACY_RADIANS = Math.toRadians(90.0).toFloat()
+        private val LOCATION_REMOVAL_RETRY_DELAYS_MILLIS = longArrayOf(1_000L, 3_000L)
     }
 
     private lateinit var store: DestinationStore
@@ -80,14 +95,26 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var lastCompassFrameTimestampNanos = 0L
     private var isCompassFrameLoopRunning = false
     private var cachedDestinationBearingDegrees: Float? = null
+    private var isDestinationBearingReliable = false
     private var renderedArrowRotationDegrees = 0f
+    private var targetArrowRotationDegrees = 0f
     private var hasRenderedArrowRotation = false
     private var isCompassSmoothingEnabled = false
     private var isRequestingLocationUpdates = false
+    private var activeLocationCallback: LocationCallback? = null
+    private var locationRequestStartTimeoutRunnable: Runnable? = null
+    private val locationSampleGate = LocationSampleGate()
+    private var locationSessionGeneration = 0L
+    private var hasReceivedFreshLocationThisSession = false
+    private var currentLocationSample: LocationSample? = null
+    private var lastWidgetRefreshElapsedRealtime = 0L
+    private var lastWidgetDistanceMeters: Float? = null
     private var currentLocation: Destination? = null
     private var destination: Destination? = null
-    private var hasShownInAppArrival = false
     private var isResolvingArrivalName = false
+    private var arrivalNameRequest: ReverseGeocoder.Request? = null
+    private var arrivalNameRequestGeneration = 0L
+    private var lastArrivalNameAttemptElapsedRealtime = 0L
     private var isShowingPreciseLocationPermissionGuide = false
     private var isShowingBackgroundPermissionGuide = false
     private var backgroundPermissionGuideDialog: AlertDialog? = null
@@ -106,15 +133,21 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var accelerometerTimestampNanos = 0L
     private var magnetometerTimestampNanos = 0L
     private var magnetometerAccuracy = SensorManager.SENSOR_STATUS_UNRELIABLE
+    private var lastPersistedHeadingElapsedRealtime = 0L
     private val compassFrameCallback = object : Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
             if (!isCompassFrameLoopRunning) return
             renderCompassFrame(frameTimeNanos)
-            Choreographer.getInstance().postFrameCallback(this)
+            if (isCompassFrameLoopRunning) {
+                Choreographer.getInstance().postFrameCallback(this)
+            }
         }
     }
+    private val compassSensorWatchdogRunnable = Runnable {
+        fallbackFromSilentRotationVector()
+    }
     private val locationTimeoutRunnable = Runnable {
-        if (currentLocation == null && !store.isDestinationAnswered()) {
+        if (!hasReceivedFreshLocationThisSession && !store.isDestinationAnswered()) {
             showLocationUnavailableState(R.string.location_timeout)
         }
     }
@@ -123,22 +156,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         Priority.PRIORITY_HIGH_ACCURACY,
         4_000
     ).setMinUpdateIntervalMillis(2_000).build()
-
-    private val locationCallback = object : LocationCallback() {
-        override fun onLocationResult(result: LocationResult) {
-            val last = result.lastLocation ?: return
-            if (store.isDebugDistanceOverrideEnabled()) return
-            distanceView.removeCallbacks(locationTimeoutRunnable)
-            currentLocation = Destination(last.latitude, last.longitude)
-            store.setLastKnownLocationFromSystem(last.latitude, last.longitude)
-            store.setLastKnownHeading(headingDegrees)
-            ensureDestinationExists()
-            updateLocationUi(
-                processLocationSideEffects = true,
-                refreshWidgets = true
-            )
-        }
-    }
 
     private val permissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
@@ -181,11 +198,16 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     override fun onResume() {
         super.onResume()
-        BackgroundLocationUpdater.setForegroundClientActive(this, true)
         destination = store.getDestination()
-        currentLocation = store.getLastKnownLocation()
+        currentLocationSample = store.getLastKnownLocationSample()
+        currentLocation = currentLocationSample?.position
+        locationSampleGate.reset(currentLocationSample)
+        hasReceivedFreshLocationThisSession = false
         isCompassSmoothingEnabled = store.isCompassSmoothingEnabled()
-        hasShownInAppArrival = store.isDestinationAnswered()
+        store.getLastKnownHeading()?.let { cachedHeading ->
+            headingDegrees = normalizeTo360(cachedHeading)
+            targetHeadingDegrees = headingDegrees
+        }
         applyDistanceMaskToggleButtonState()
         arrowView.clearColorFilter()
         updateArrivalUiIfNeeded()
@@ -198,7 +220,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
         syncDestinationGeofence()
         registerCompass()
-        startCompassFrameLoop()
         registerScreenCaptureCallbackIfSupported()
     }
 
@@ -206,11 +227,22 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         super.onPause()
         stopCompassFrameLoop()
         stopForegroundLocationUpdates()
-        BackgroundLocationUpdater.setForegroundClientActive(this, false)
         distanceView.removeCallbacks(locationTimeoutRunnable)
-        sensorManager.unregisterListener(this)
+        arrowView.removeCallbacks(compassSensorWatchdogRunnable)
+        unregisterCompassSensors()
         stopLoadingArrowAnimation()
         unregisterScreenCaptureCallbackIfNeeded()
+        arrivalNameRequest?.cancel()
+        arrivalNameRequest = null
+        isResolvingArrivalName = false
+    }
+
+    override fun onDestroy() {
+        arrivalNameRequestGeneration += 1L
+        arrivalNameRequest?.cancel()
+        arrivalNameRequest = null
+        backgroundPermissionGuideDialog?.dismiss()
+        super.onDestroy()
     }
 
     private fun requestRuntimePermissionsIfNeeded() {
@@ -305,9 +337,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 .setMessage(R.string.background_permission_guide_message)
                 .setCancelable(false)
                 .setPositiveButton(R.string.background_permission_guide_positive) { _, _ ->
-                    store.setBackgroundPermissionGuideShown(true)
                     isShowingBackgroundPermissionGuide = false
-                    openAppPermissionSettings()
+                    if (openAppPermissionSettings()) {
+                        store.setBackgroundPermissionGuideShown(true)
+                    }
                 }
                 .setOnDismissListener {
                     isShowingBackgroundPermissionGuide = false
@@ -323,11 +356,35 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     @SuppressLint("MissingPermission")
     private fun startUpdatesIfPermitted() {
-        if (!hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)) {
-            stopForegroundLocationUpdates()
+        if (isRequestingLocationUpdates) return
+        val sessionGeneration = ++locationSessionGeneration
+        hasReceivedFreshLocationThisSession = false
+
+        if (store.isDestinationAnswered()) {
+            stopForegroundLocationUpdates(invalidateSession = false)
             distanceView.removeCallbacks(locationTimeoutRunnable)
+            BackgroundLocationUpdater.updateRegistration(this)
+            updateArrivalUiIfNeeded()
+            return
+        }
+
+        if (store.isDebugDistanceOverrideEnabled()) {
+            stopForegroundLocationUpdates(invalidateSession = false)
+            currentLocationSample = store.getLastKnownLocationSample()
+            currentLocation = currentLocationSample?.position
+            ensureDestinationExists()
+            updateLocationUi(processLocationSideEffects = true, refreshWidgets = true)
+            return
+        }
+
+        if (!hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)) {
+            stopForegroundLocationUpdates(invalidateSession = false)
+            distanceView.removeCallbacks(locationTimeoutRunnable)
+            currentLocationSample = null
             currentLocation = null
+            locationSampleGate.reset()
             cachedDestinationBearingDegrees = null
+            isDestinationBearingReliable = false
             startLoadingArrowAnimation()
             BackgroundLocationUpdater.updateRegistration(this)
             NotificationHelper.cancelApproachProgress(this)
@@ -352,53 +409,211 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
 
         if (!isSystemLocationEnabled()) {
-            stopForegroundLocationUpdates()
+            stopForegroundLocationUpdates(invalidateSession = false)
             startLoadingArrowAnimation()
             showLocationUnavailableState(R.string.location_service_disabled)
+            return
+        }
+
+        if (!BackgroundLocationUpdater.isGoogleLocationAvailable(this)) {
+            stopForegroundLocationUpdates(invalidateSession = false)
+            AppDiagnostics.warn("google_location_unavailable")
+            showLocationUnavailableState(R.string.location_update_start_failed)
             return
         }
 
         startLoadingArrowAnimation()
         BackgroundLocationUpdater.updateRegistration(this)
         fusedClient.lastLocation
-            .addOnSuccessListener { last ->
-                if (last != null &&
-                    currentLocation == null &&
-                    !store.isDebugDistanceOverrideEnabled()
-                ) {
-                    currentLocation = Destination(last.latitude, last.longitude)
-                    store.setLastKnownLocationFromSystem(last.latitude, last.longitude)
-                    store.setLastKnownHeading(headingDegrees)
-                    ensureDestinationExists()
-                    updateLocationUi(
-                        processLocationSideEffects = true,
-                        refreshWidgets = true
+            .addOnSuccessListener(this) { last ->
+                if (last != null && sessionGeneration == locationSessionGeneration) {
+                    acceptLocation(
+                        last,
+                        LocationSampleSource.LAST_KNOWN,
+                        sessionGeneration,
+                        marksFreshSession = false
                     )
                 }
             }
+            .addOnFailureListener(this) {
+                AppDiagnostics.warn("last_location_failed", error = it)
+            }
         distanceView.removeCallbacks(locationTimeoutRunnable)
         distanceView.postDelayed(locationTimeoutRunnable, LOCATION_TIMEOUT_MS)
-        if (isRequestingLocationUpdates) return
-
-        isRequestingLocationUpdates = true
-        runCatching {
-            fusedClient.requestLocationUpdates(locationRequest, locationCallback, mainLooper)
-                .addOnFailureListener {
-                    isRequestingLocationUpdates = false
-                    distanceView.removeCallbacks(locationTimeoutRunnable)
-                    showLocationUnavailableState(R.string.location_update_start_failed)
+        val callback = object : LocationCallback() {
+            override fun onLocationResult(result: LocationResult) {
+                if (sessionGeneration != locationSessionGeneration ||
+                    activeLocationCallback !== this
+                ) {
+                    return
                 }
-        }.onFailure {
+                clearForegroundRequestStartTimeout()
+                val last = result.lastLocation ?: return
+                acceptLocation(
+                    last,
+                    LocationSampleSource.CONTINUOUS,
+                    sessionGeneration,
+                    marksFreshSession = true
+                )
+            }
+        }
+        activeLocationCallback = callback
+        isRequestingLocationUpdates = true
+        val requestTask = runCatching {
+            fusedClient.requestLocationUpdates(locationRequest, callback, mainLooper)
+        }.getOrElse {
             isRequestingLocationUpdates = false
+            activeLocationCallback = null
             distanceView.removeCallbacks(locationTimeoutRunnable)
+            AppDiagnostics.warn("foreground_location_request_threw", error = it)
             showLocationUnavailableState(R.string.location_update_start_failed)
+            return
+        }
+        lateinit var requestStartTimeout: Runnable
+        requestStartTimeout = Runnable {
+            if (locationRequestStartTimeoutRunnable !== requestStartTimeout) return@Runnable
+            locationRequestStartTimeoutRunnable = null
+            if (sessionGeneration == locationSessionGeneration &&
+                activeLocationCallback === callback
+            ) {
+                AppDiagnostics.warn("foreground_location_request_timeout")
+                stopForegroundLocationUpdates()
+                distanceView.removeCallbacks(locationTimeoutRunnable)
+                showLocationUnavailableState(R.string.location_update_start_failed)
+            }
+        }
+        locationRequestStartTimeoutRunnable = requestStartTimeout
+        distanceView.postDelayed(requestStartTimeout, LOCATION_REQUEST_OPERATION_TIMEOUT_MILLIS)
+        requestTask.addOnCompleteListener { task ->
+            if (locationRequestStartTimeoutRunnable === requestStartTimeout) {
+                distanceView.removeCallbacks(requestStartTimeout)
+                locationRequestStartTimeoutRunnable = null
+            }
+            val stillActive = sessionGeneration == locationSessionGeneration &&
+                activeLocationCallback === callback &&
+                !isFinishing &&
+                !isDestroyed
+            if (!stillActive) {
+                // Some OEM/GMS implementations can finish registration after onPause() already
+                // issued its first removal. Remove again after completion to close that race.
+                removeForegroundLocationCallback(callback, "stale_request_completion")
+                return@addOnCompleteListener
+            }
+            if (!task.isSuccessful) {
+                isRequestingLocationUpdates = false
+                activeLocationCallback = null
+                distanceView.removeCallbacks(locationTimeoutRunnable)
+                AppDiagnostics.warn(
+                    "foreground_location_request_failed",
+                    error = task.exception
+                )
+                showLocationUnavailableState(R.string.location_update_start_failed)
+            }
         }
     }
 
-    private fun stopForegroundLocationUpdates() {
-        if (!isRequestingLocationUpdates) return
+    private fun acceptLocation(
+        location: android.location.Location,
+        source: LocationSampleSource,
+        sessionGeneration: Long,
+        marksFreshSession: Boolean
+    ) {
+        if (sessionGeneration != locationSessionGeneration ||
+            isFinishing ||
+            isDestroyed ||
+            store.isDebugDistanceOverrideEnabled()
+        ) {
+            return
+        }
+        val sample = LocationSampleFactory.fromAndroidLocation(location, source) ?: return
+        if (!locationSampleGate.accept(sample)) {
+            AppDiagnostics.info(
+                "foreground_location_sample_rejected",
+                "source=${sample.source}, accuracy=${sample.accuracyMeters}"
+            )
+            return
+        }
+        currentLocationSample = sample
+        currentLocation = sample.position
+        store.setLastKnownLocation(sample)
+        if (marksFreshSession &&
+            sample.source == LocationSampleSource.CONTINUOUS &&
+            sample.ageMillis <= LocationSample.MAX_ARRIVAL_AGE_MILLIS
+        ) {
+            hasReceivedFreshLocationThisSession = true
+            distanceView.removeCallbacks(locationTimeoutRunnable)
+        }
+        ensureDestinationExists()
+        updateLocationUi(processLocationSideEffects = true, refreshWidgets = true)
+    }
+
+    private fun stopForegroundLocationUpdates(invalidateSession: Boolean = true) {
+        if (invalidateSession) locationSessionGeneration += 1L
+        val callback = activeLocationCallback
+        activeLocationCallback = null
         isRequestingLocationUpdates = false
-        fusedClient.removeLocationUpdates(locationCallback)
+        clearForegroundRequestStartTimeout()
+        if (callback != null) {
+            removeForegroundLocationCallback(callback, "session_stop")
+        }
+    }
+
+    private fun removeForegroundLocationCallback(
+        callback: LocationCallback,
+        reason: String,
+        attempt: Int = 0
+    ) {
+        val task = runCatching {
+            fusedClient.removeLocationUpdates(callback)
+        }.getOrElse {
+            AppDiagnostics.warn(
+                "foreground_location_remove_threw",
+                "reason=$reason",
+                it
+            )
+            retryForegroundLocationRemoval(callback, reason, attempt)
+            return
+        }
+        val handled = AtomicBoolean(false)
+        lateinit var timeout: Runnable
+        timeout = Runnable {
+            if (!handled.compareAndSet(false, true)) return@Runnable
+            AppDiagnostics.warn(
+                "foreground_location_remove_timeout",
+                "reason=$reason, attempt=$attempt"
+            )
+            retryForegroundLocationRemoval(callback, reason, attempt)
+        }
+        distanceView.postDelayed(timeout, LOCATION_REQUEST_OPERATION_TIMEOUT_MILLIS)
+        task.addOnCompleteListener { completedTask ->
+            if (!handled.compareAndSet(false, true)) return@addOnCompleteListener
+            distanceView.removeCallbacks(timeout)
+            if (!completedTask.isSuccessful) {
+                AppDiagnostics.warn(
+                    "foreground_location_remove_failed",
+                    "reason=$reason",
+                    completedTask.exception
+                )
+                retryForegroundLocationRemoval(callback, reason, attempt)
+            }
+        }
+    }
+
+    private fun retryForegroundLocationRemoval(
+        callback: LocationCallback,
+        reason: String,
+        attempt: Int
+    ) {
+        val delay = LOCATION_REMOVAL_RETRY_DELAYS_MILLIS.getOrNull(attempt) ?: return
+        distanceView.postDelayed(
+            { removeForegroundLocationCallback(callback, reason, attempt + 1) },
+            delay
+        )
+    }
+
+    private fun clearForegroundRequestStartTimeout() {
+        locationRequestStartTimeoutRunnable?.let(distanceView::removeCallbacks)
+        locationRequestStartTimeoutRunnable = null
     }
 
     private fun showLocationUnavailableState(messageResId: Int, detailMessageResId: Int? = null) {
@@ -448,7 +663,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         if (store.isDestinationAnswered()) {
             updateArrivalUiIfNeeded()
             if (refreshWidgets) {
-                DestinationWidgetProvider.refreshAllWidgets(this)
+                refreshWidgetsIfNeeded(force = true)
             }
             return
         }
@@ -461,16 +676,37 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         if (!distance.isFinite() || !bearing.isFinite()) {
             return
         }
-        cachedDestinationBearingDegrees = bearing
+        val sampleAccuracyMeters = currentLocationSample
+            ?.refreshedAge()
+            ?.accuracyMeters
+            ?: LocationSample.MAX_DISPLAY_ACCURACY_METERS
+        isDestinationBearingReliable = BearingPolicy.isReliable(
+            distanceMeters = distance,
+            accuracyMeters = sampleAccuracyMeters
+        )
+        if (isDestinationBearingReliable) {
+            cachedDestinationBearingDegrees = bearing
+        } else {
+            AppDiagnostics.info(
+                "destination_bearing_held_for_accuracy",
+                "distance=$distance, accuracy=$sampleAccuracyMeters"
+            )
+        }
 
         setArrivalStateVisible(false)
-        updateArrowRotationOnly()
+        updateArrowTarget()
+        updateArrowConfidence()
+        if (hasHeadingSample && cachedDestinationBearingDegrees != null) {
+            startCompassFrameLoop()
+        }
         distanceView.typeface = Typeface.MONOSPACE
         distanceView.text = formatDistanceForMainScreen(distance)
         directionView.setTextColor(
             ContextCompat.getColor(this, R.color.expressive_on_surface_variant)
         )
-        directionView.text = if (store.isManualDistanceMaskEnabled()) {
+        directionView.text = if (store.isManualDistanceMaskEnabled() ||
+            !isDestinationBearingReliable
+        ) {
             getString(R.string.direction_placeholder)
         } else {
             getString(
@@ -484,30 +720,46 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
 
         updateApproachLiveUpdate(distance)
-
-        if (store.isArrivalRearmRequired()) {
-            if (distance > ARRIVAL_THRESHOLD_METERS) {
-                store.setArrivalRearmRequired(false)
+        val activityReference = WeakReference(this)
+        val arrived = currentLocationSample?.let { sample ->
+            ArrivalCoordinator.observeLocation(this, store, sample, target, distance) { resolved ->
+                val activity = activityReference.get() ?: return@observeLocation
+                if (!activity.isFinishing &&
+                    !activity.isDestroyed &&
+                    activity.store.isDestinationAnswered()
+                ) {
+                    activity.arrivalNameView.text = resolved
+                }
             }
-        }
-
-        if (!store.isArrivalRearmRequired() &&
-            distance <= ARRIVAL_THRESHOLD_METERS &&
-            !hasShownInAppArrival
-        ) {
-            hasShownInAppArrival = true
-            if (store.isArrivalSoundEnabled()) {
-                SoundEffectPlayer.play(this, R.raw.arrival_0km)
-            }
-            store.setDestinationAnswered(true)
-            store.setArrivalDestinationName("${target.lat}, ${target.lng}")
-            NotificationHelper.cancelApproachProgress(this)
-            resolveArrivalNameIfNeeded(target, shouldNotifyWhenResolved = true)
+        } ?: false
+        if (arrived) {
+            distanceView.removeCallbacks(locationTimeoutRunnable)
+            stopForegroundLocationUpdates()
             updateArrivalUiIfNeeded()
+        } else {
+            DistanceEventProcessor.process(this, store, distance)
         }
         if (refreshWidgets) {
-            DestinationWidgetProvider.refreshAllWidgets(this)
+            refreshWidgetsIfNeeded(distanceMeters = distance)
         }
+    }
+
+    private fun refreshWidgetsIfNeeded(
+        distanceMeters: Float? = null,
+        force: Boolean = false
+    ) {
+        val now = SystemClock.elapsedRealtime()
+        val previousDistance = lastWidgetDistanceMeters
+        val changedEnough = distanceMeters != null &&
+            (previousDistance == null || abs(distanceMeters - previousDistance) >= MIN_WIDGET_DISTANCE_DELTA_METERS)
+        if (!force) {
+            val elapsed = now - lastWidgetRefreshElapsedRealtime
+            if (elapsed < MIN_WIDGET_REFRESH_INTERVAL_MILLIS) return
+            if (!changedEnough && elapsed < MAX_IDLE_WIDGET_REFRESH_INTERVAL_MILLIS) return
+        }
+        DestinationWidgetProvider.refreshAllWidgets(this)
+        lastWidgetRefreshElapsedRealtime = now
+        if (distanceMeters != null) lastWidgetDistanceMeters = distanceMeters
     }
 
     private fun updateArrivalUiIfNeeded() {
@@ -540,7 +792,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             return
         }
         arrivalNameView.text = arrivalName
-        if (target != null && arrivalName.contains(",")) {
+        if (target != null && !store.isArrivalDestinationNameResolved()) {
             resolveArrivalNameIfNeeded(target)
         }
     }
@@ -551,28 +803,42 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     ) {
         if (isResolvingArrivalName) return
         if (!store.isDestinationAnswered()) return
-        val currentName = store.getArrivalDestinationName()
-        if (!currentName.isNullOrBlank() && !currentName.contains(",")) return
+        if (store.isArrivalDestinationNameResolved()) return
+        if (ArrivalCoordinator.isResolvingName(store.getDestinationGeneration())) return
+        val now = SystemClock.elapsedRealtime()
+        if (lastArrivalNameAttemptElapsedRealtime != 0L &&
+            now - lastArrivalNameAttemptElapsedRealtime < ARRIVAL_NAME_RETRY_INTERVAL_MILLIS
+        ) {
+            return
+        }
 
         isResolvingArrivalName = true
-        Thread {
-            val resolved = ReverseGeocoder.resolve(this, target)
-            runOnUiThread {
-                isResolvingArrivalName = false
-                val currentTarget = destination
-                if (!store.isDestinationAnswered() || currentTarget == null || !sameDestination(currentTarget, target)) {
-                    return@runOnUiThread
-                }
-                store.setArrivalDestinationName(resolved)
-                arrivalNameView.text = resolved
-                if (shouldNotifyWhenResolved) {
-                    NotificationHelper.showDestinationReached(
-                        this,
-                        getString(R.string.notification_body, resolved)
-                    )
-                }
+        lastArrivalNameAttemptElapsedRealtime = now
+        val requestGeneration = ++arrivalNameRequestGeneration
+        arrivalNameRequest?.cancel()
+        arrivalNameRequest = ReverseGeocoder.resolveAsync(this, target) { resolved ->
+            if (requestGeneration != arrivalNameRequestGeneration || isFinishing || isDestroyed) {
+                return@resolveAsync
             }
-        }.start()
+            isResolvingArrivalName = false
+            arrivalNameRequest = null
+            val currentTarget = destination
+            if (!store.isDestinationAnswered() ||
+                currentTarget == null ||
+                !sameDestination(currentTarget, target)
+            ) {
+                return@resolveAsync
+            }
+            val fallback = "${target.lat}, ${target.lng}"
+            store.setArrivalDestinationName(resolved, resolved = resolved != fallback)
+            arrivalNameView.text = resolved
+            if (shouldNotifyWhenResolved) {
+                NotificationHelper.showDestinationReached(
+                    this,
+                    getString(R.string.notification_body, resolved)
+                )
+            }
+        }
     }
 
     private fun sameDestination(a: Destination, b: Destination): Boolean {
@@ -589,7 +855,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         destination = fixedDestination
         store.setDestinationAnswered(false)
         store.setArrivalRearmRequired(true)
-        hasShownInAppArrival = false
+        store.advanceDestinationGeneration()
+        DistanceEventProcessor.reset(store.getDestinationGeneration())
+        lastArrivalNameAttemptElapsedRealtime = 0L
         GeofenceHelper.registerDestinationGeofence(this, fixedDestination)
         NotificationHelper.cancelApproachProgress(this)
         setArrivalStateVisible(false)
@@ -601,6 +869,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         } else {
             DestinationWidgetProvider.refreshAllWidgets(this)
         }
+        startUpdatesIfPermitted()
     }
 
     private fun updateApproachLiveUpdate(distanceMeters: Float) {
@@ -640,11 +909,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun normalizeRotation(value: Float): Float {
-        if (!value.isFinite()) return 0f
-        var normalized = value % 360f
-        if (normalized > 180f) normalized -= 360f
-        if (normalized < -180f) normalized += 360f
-        return normalized
+        return AngleMath.shortestDelta(0f, value)
     }
 
     private fun applyDistanceMaskToggleButtonState() {
@@ -738,6 +1003,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             return
         }
         hasRenderedArrowRotation = false
+        targetArrowRotationDegrees = 0f
+        arrowView.alpha = 1f
         loadingArrowAnimator = ObjectAnimator.ofFloat(arrowView, View.ROTATION, 0f, 360f).apply {
             duration = 1400L
             interpolator = LinearInterpolator()
@@ -747,12 +1014,18 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun stopLoadingArrowAnimation() {
-        loadingArrowAnimator?.cancel()
+        val animator = loadingArrowAnimator ?: run {
+            updateArrowConfidence()
+            return
+        }
+        animator.cancel()
         loadingArrowAnimator = null
         hasRenderedArrowRotation = false
+        targetArrowRotationDegrees = 0f
+        updateArrowConfidence()
     }
 
-    private fun openAppPermissionSettings() {
+    private fun openAppPermissionSettings(): Boolean {
         val intents = listOf(
             Intent("android.settings.APP_PERMISSION_SETTINGS").apply {
                 putExtra("android.provider.extra.APP_PACKAGE", packageName)
@@ -764,40 +1037,110 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             }
         )
         for (intent in intents) {
-            if (intent.resolveActivity(packageManager) == null) continue
-            skipPermissionGuideOnce = true
             val launched = runCatching {
                 startActivity(intent)
             }.isSuccess
             if (launched) {
-                return
+                skipPermissionGuideOnce = true
+                return true
             }
-            skipPermissionGuideOnce = false
         }
+        skipPermissionGuideOnce = false
+        return false
     }
 
     private fun registerCompass() {
-        sensorManager.unregisterListener(this)
+        arrowView.removeCallbacks(compassSensorWatchdogRunnable)
+        unregisterCompassSensors()
         resetCompassTracking()
 
+        var registered = false
+        var rotationVectorPrimary = false
         if (!store.isLegacyCompassModeEnabled()) {
-            val sensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
-            if (sensor != null) {
-                sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_GAME)
-            }
-        } else {
-            val accel = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-            val mag   = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
-            if (accel != null && mag != null) {
-                sensorManager.registerListener(this, accel, SensorManager.SENSOR_DELAY_UI)
-                sensorManager.registerListener(this, mag,   SensorManager.SENSOR_DELAY_UI)
-            } else {
-                val fallback = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
-                if (fallback != null) {
-                    sensorManager.registerListener(this, fallback, SensorManager.SENSOR_DELAY_UI)
-                }
+            registered = registerRotationVectorSensor()
+            rotationVectorPrimary = registered
+        }
+        if (!registered) {
+            registered = registerLegacyCompassSensors()
+            if (!registered && store.isLegacyCompassModeEnabled()) {
+                registered = registerRotationVectorSensor()
+                rotationVectorPrimary = registered
             }
         }
+        if (!registered) {
+            AppDiagnostics.warn("compass_sensor_unavailable")
+            arrowView.alpha = 0.35f
+        } else if (rotationVectorPrimary) {
+            arrowView.postDelayed(
+                compassSensorWatchdogRunnable,
+                COMPASS_FIRST_SAMPLE_TIMEOUT_MILLIS
+            )
+        }
+    }
+
+    private fun registerRotationVectorSensor(): Boolean {
+        val sensor = runCatching {
+            sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        }.onFailure {
+            AppDiagnostics.warn("rotation_vector_lookup_failed", error = it)
+        }.getOrNull() ?: return false
+        return runCatching {
+            sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_UI)
+        }.onFailure {
+            AppDiagnostics.warn("rotation_vector_registration_failed", error = it)
+        }.getOrDefault(false)
+    }
+
+    private fun registerLegacyCompassSensors(): Boolean {
+        val accelerometer = runCatching {
+            sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        }.getOrNull()
+        val magnetometer = runCatching {
+            sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
+        }.getOrNull()
+        if (accelerometer == null || magnetometer == null) return false
+
+        val accelerometerRegistered = runCatching {
+            sensorManager.registerListener(
+                this,
+                accelerometer,
+                SensorManager.SENSOR_DELAY_UI
+            )
+        }.getOrDefault(false)
+        val magnetometerRegistered = runCatching {
+            sensorManager.registerListener(
+                this,
+                magnetometer,
+                SensorManager.SENSOR_DELAY_UI
+            )
+        }.getOrDefault(false)
+        if (!accelerometerRegistered || !magnetometerRegistered) {
+            unregisterCompassSensors()
+            AppDiagnostics.warn(
+                "legacy_compass_registration_incomplete",
+                "accelerometer=$accelerometerRegistered, magnetometer=$magnetometerRegistered"
+            )
+            return false
+        }
+        return true
+    }
+
+    private fun fallbackFromSilentRotationVector() {
+        if (hasHeadingSample || isFinishing || isDestroyed) return
+        AppDiagnostics.warn("rotation_vector_first_sample_timeout")
+        unregisterCompassSensors()
+        resetCompassTracking()
+        if (!registerLegacyCompassSensors()) {
+            AppDiagnostics.warn("compass_fallback_unavailable")
+            arrowView.alpha = 0.35f
+        }
+    }
+
+    private fun unregisterCompassSensors() {
+        runCatching { sensorManager.unregisterListener(this) }
+            .onFailure {
+                AppDiagnostics.warn("compass_unregister_failed", error = it)
+            }
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
@@ -806,8 +1149,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             Sensor.TYPE_ROTATION_VECTOR -> {
                 val estimatedAccuracy = event.values.getOrNull(4)
                     ?.takeIf { it.isFinite() && it >= 0f }
-                if (hasHeadingSample &&
-                    estimatedAccuracy != null &&
+                if (estimatedAccuracy != null &&
                     estimatedAccuracy > REJECT_HEADING_ACCURACY_RADIANS
                 ) {
                     return
@@ -974,12 +1316,20 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         lowAccuracy: Boolean
     ) {
         if (!heading.isFinite()) return
+        val effectiveTimestampNanos = if (timestampNanos > lastAcceptedHeadingTimestampNanos) {
+            timestampNanos
+        } else {
+            maxOf(
+                SystemClock.elapsedRealtimeNanos(),
+                lastAcceptedHeadingTimestampNanos + 1L
+            )
+        }
         if (hasHeadingSample &&
             lastAcceptedHeadingTimestampNanos > 0L &&
-            timestampNanos > lastAcceptedHeadingTimestampNanos
+            effectiveTimestampNanos > lastAcceptedHeadingTimestampNanos
         ) {
             val deltaSeconds =
-                (timestampNanos - lastAcceptedHeadingTimestampNanos) / 1_000_000_000f
+                (effectiveTimestampNanos - lastAcceptedHeadingTimestampNanos) / 1_000_000_000f
             if (deltaSeconds <= MAX_SENSOR_SAMPLE_GAP_SECONDS) {
                 val maximumDelta =
                     MAX_RAW_ANGULAR_SPEED_DEGREES_PER_SECOND * deltaSeconds +
@@ -992,11 +1342,21 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         targetHeadingDegrees = heading
         isLatestHeadingLowAccuracy = lowAccuracy
-        lastAcceptedHeadingTimestampNanos = timestampNanos
+        lastAcceptedHeadingTimestampNanos = effectiveTimestampNanos
+        arrowView.removeCallbacks(compassSensorWatchdogRunnable)
         if (!hasHeadingSample) {
             headingDegrees = heading
             hasHeadingSample = true
         }
+        updateArrowConfidence()
+        val now = SystemClock.elapsedRealtime()
+        if (lastPersistedHeadingElapsedRealtime == 0L ||
+            now - lastPersistedHeadingElapsedRealtime >= HEADING_PERSIST_INTERVAL_MILLIS
+        ) {
+            store.setLastKnownHeading(heading)
+            lastPersistedHeadingElapsedRealtime = now
+        }
+        startCompassFrameLoop()
     }
 
     private fun resetCompassTracking() {
@@ -1011,6 +1371,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         magnetometerTimestampNanos = 0L
         magnetometerAccuracy = SensorManager.SENSOR_STATUS_UNRELIABLE
         hasRenderedArrowRotation = false
+        targetArrowRotationDegrees = 0f
+        arrowView.alpha = 0.35f
     }
 
     private fun startCompassFrameLoop() {
@@ -1031,7 +1393,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         if (!hasHeadingSample) return
         if (lastCompassFrameTimestampNanos == 0L) {
             lastCompassFrameTimestampNanos = frameTimeNanos
-            updateArrowRotationOnly()
+            updateArrowTarget()
             return
         }
 
@@ -1058,26 +1420,67 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         } else {
             headingDegrees = targetHeadingDegrees
         }
-        updateArrowRotationOnly()
+        val remainingDelta = abs(normalizeRotation(targetHeadingDegrees - headingDegrees))
+        val headingSettled = !isCompassSmoothingEnabled ||
+            remainingDelta <= COMPASS_SETTLED_EPSILON_DEGREES
+        if (headingSettled) {
+            headingDegrees = targetHeadingDegrees
+        }
+        updateArrowTarget()
+        val arrowSettled = renderArrowStep(deltaSeconds)
+        if (headingSettled && arrowSettled) {
+            isCompassFrameLoopRunning = false
+            lastCompassFrameTimestampNanos = 0L
+        }
     }
 
-    private fun updateArrowRotationOnly() {
-        if (loadingArrowAnimator != null || store.isDestinationAnswered()) return
+    private fun updateArrowTarget() {
+        if (loadingArrowAnimator != null || store.isDestinationAnswered() || !hasHeadingSample) return
         val bearing = cachedDestinationBearingDegrees ?: return
         if (!bearing.isFinite() || !headingDegrees.isFinite()) return
 
         val desiredRotation = normalizeTo360(
             bearing - headingDegrees - ARROW_IMAGE_FORWARD_OFFSET_DEGREES
         )
-        renderedArrowRotationDegrees = if (hasRenderedArrowRotation) {
-            renderedArrowRotationDegrees + normalizeRotation(
+        if (hasRenderedArrowRotation) {
+            targetArrowRotationDegrees = renderedArrowRotationDegrees + normalizeRotation(
                 desiredRotation - normalizeTo360(renderedArrowRotationDegrees)
             )
         } else {
             hasRenderedArrowRotation = true
-            desiredRotation
+            renderedArrowRotationDegrees = desiredRotation
+            targetArrowRotationDegrees = desiredRotation
+            arrowView.rotation = renderedArrowRotationDegrees
         }
+    }
+
+    private fun renderArrowStep(deltaSeconds: Float): Boolean {
+        if (!hasRenderedArrowRotation) return true
+        val delta = targetArrowRotationDegrees - renderedArrowRotationDegrees
+        if (abs(delta) <= ARROW_SETTLED_EPSILON_DEGREES) {
+            renderedArrowRotationDegrees = targetArrowRotationDegrees
+            arrowView.rotation = renderedArrowRotationDegrees
+            return true
+        }
+        val alpha = 1f - exp(-deltaSeconds / ARROW_SMOOTHING_TIME_CONSTANT_SECONDS)
+        val maximumStep = MAX_ARROW_ANGULAR_SPEED_DEGREES_PER_SECOND * deltaSeconds
+        val step = (delta * alpha).coerceIn(-maximumStep, maximumStep)
+        renderedArrowRotationDegrees += step
         arrowView.rotation = renderedArrowRotationDegrees
+        return abs(targetArrowRotationDegrees - renderedArrowRotationDegrees) <=
+            ARROW_SETTLED_EPSILON_DEGREES
+    }
+
+    private fun updateArrowConfidence() {
+        if (loadingArrowAnimator != null) {
+            arrowView.alpha = 1f
+            return
+        }
+        arrowView.alpha = when {
+            !hasHeadingSample || !isDestinationBearingReliable -> 0.35f
+            isLatestHeadingLowAccuracy -> 0.65f
+            else -> 1f
+        }
     }
 
     private fun Float.isFinite(): Boolean {
@@ -1094,9 +1497,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun normalizeTo360(value: Float): Float {
-        if (!value.isFinite()) return 0f
-        val mod = value % 360f
-        return if (mod < 0f) mod + 360f else mod
+        return AngleMath.normalize360(value)
     }
 
     private fun isValidDestination(destination: Destination): Boolean {

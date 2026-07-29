@@ -77,10 +77,10 @@
     <string name="background_location_section_title">后台更新</string>
     <string name="background_location_section_help">关于后台运行的相关设置</string>
     <string name="background_location_update_toggle">在后台更新位置</string>
-    <string name="background_location_update_help">通过作为后台应用运行来更新位置，使通知更易于送达</string>
+    <string name="background_location_update_help">应用关闭时仍会监控您接近目的地的情况，运行期间会显示定位通知</string>
     <string name="background_location_update_help_forced">由于音频播放功能已启用，此设置将始终保持开启</string>
     <string name="background_location_update_warning_title">⚠️关于电池消耗的注意事项</string>
-    <string name="background_location_update_warning_message">虽然开启后台运行有利于小组件更新和通知送达，但可能会加快电池消耗</string>
+    <string name="background_location_update_warning_message">应用关闭时仍会使用位置信息，并在运行期间显示通知。电池消耗可能因设备和使用时长而增加</string>
     <string name="widget_bearing_mode_title">微件方位显示</string>
     <string name="widget_bearing_mode_absolute">绝对方位（以北为基准）</string>
     <string name="widget_bearing_mode_relative">相对方位（以设备朝向为基准）</string>
@@ -109,12 +109,12 @@
     <string name="about_dev_channel_dialog_title">开发频道: %1$s</string>
     <string name="about_dev_channel_value_intdev">内部验证版</string>
     <string name="about_dev_channel_value_beta">测试版</string>
-    <string name="about_dev_channel_value_rc">发布候选版</string>
+    <string name="about_dev_channel_value_prerelease">预发布版</string>
     <string name="about_dev_channel_value_stable">稳定版</string>
     <string name="about_dev_channel_value_unknown">未知</string>
     <string name="about_dev_channel_desc_intdev">IntDev是用于内部验证的版本，仅对开发人员和部分成员开放，可能包含规格变更或不稳定的行为，并包括调试菜单</string>
     <string name="about_dev_channel_desc_dev">Beta是预发布版本，会在GitHub等平台公开，但可能会出现不稳定的行为，并包含调试菜单</string>
-    <string name="about_dev_channel_desc_rc">RC 是发布候选版，属于接近正式发布的预发布版本。如果发现严重问题，内容仍可能发生变更，并且可能包含调试功能。</string>
+    <string name="about_dev_channel_desc_prerelease">Pre-release 是正式发布前的测试版本，可能包含新功能，但不保证稳定性。</string>
     <string name="about_dev_channel_desc_stable">Stable是稳定版，经过充分的错误验证后发布，运行稳定，已移除开发者功能等</string>
     <string name="about_dev_channel_desc_unknown">此频道的说明尚未注册</string>
     <string name="about_simple_version_title">版本</string>
@@ -143,6 +143,7 @@
     <string name="license_google_terms_body">Google Play 服务位置 API 根据 Google Play 服务条款提供。\n\n本应用未以典型的开源许可文本形式分发此内容。\n详情请参考 Google 官方条款和政策。</string>
     <string name="oss_open_failed">无法打开 URL</string>
     <string name="language_settings_open_failed">无法打开语言设置</string>
+    <string name="external_link_open_failed">无法打开链接</string>
     <string name="oss_auto_load_failed">自动生成许可加载失败</string>
     <string name="oss_unknown_license">未指定许可</string>
     <string name="oss_unknown_url">无URL</string>

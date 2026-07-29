@@ -11,8 +11,14 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
+import android.media.MediaPlayer
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.LocationCallback
@@ -20,37 +26,83 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import java.util.concurrent.atomic.AtomicBoolean
 
 class ForegroundDistanceMonitorService : Service() {
     private lateinit var store: DestinationStore
     private val fusedClient by lazy { LocationServices.getFusedLocationProviderClient(this) }
 
-    private var distance114514SoundPlayed = false
-    private var lastIntervalBucket: Int? = null
-    private var previousDistanceMeters: Float? = null
     private var lastWidgetUpdateTimeMs: Long = 0L
     private var isForegroundStarted = false
     private var isRequestingLocationUpdates = false
+    private var isSwitchingLocationRequest = false
+    private var serviceDestroyed = false
+    private var requestMode = RequestMode.BALANCED
+    private var locationRequestGeneration = 0L
+    private var requestSwitchToken = 0L
+    private var activeLocationCallback: LocationCallback? = null
+    private var locationRequestStartTimeoutRunnable: Runnable? = null
+    private val locationSampleGate = LocationSampleGate()
+    private val mainHandler by lazy { Handler(mainLooper) }
+    private var localSoundPlayer: MediaPlayer? = null
+    private var localSoundPriority = 0
+    private var localAudioFocusRequest: AudioFocusRequest? = null
+    private var stopAfterLocalSound = false
+    private val playbackAudioAttributes by lazy {
+        AudioAttributes.Builder()
+            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+            .setUsage(AudioAttributes.USAGE_MEDIA)
+            .build()
+    }
+    private val audioManager by lazy {
+        getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    }
+    private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { change ->
+        when (change) {
+            AudioManager.AUDIOFOCUS_GAIN ->
+                localSoundPlayer?.runCatching { setVolume(1f, 1f) }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK ->
+                localSoundPlayer?.runCatching {
+                    setVolume(LOCAL_SOUND_DUCK_VOLUME, LOCAL_SOUND_DUCK_VOLUME)
+                }
+            AudioManager.AUDIOFOCUS_LOSS,
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> finishLocalSound()
+        }
+    }
 
-    private val locationRequest = LocationRequest.Builder(
-        Priority.PRIORITY_HIGH_ACCURACY,
-        4_000L
-    ).setMinUpdateIntervalMillis(2_000L).build()
-
-    private val locationCallback = object : LocationCallback() {
+    private fun createLocationCallback(requestGeneration: Long): LocationCallback =
+        object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
-            val location = result.lastLocation ?: return
-            if (store.isDebugDistanceOverrideEnabled()) {
+            if (serviceDestroyed ||
+                requestGeneration != locationRequestGeneration ||
+                activeLocationCallback !== this
+            ) {
                 return
             }
-            val current = Destination(location.latitude, location.longitude)
-            store.setLastKnownLocationFromSystem(current.lat, current.lng)
-            if (location.hasBearing()) {
-                store.setLastKnownHeading(location.bearing)
+            clearLocationRequestStartTimeout()
+            val location = result.lastLocation ?: return
+            if (store.isDebugDistanceOverrideEnabled()) {
+                stopSelf()
+                return
             }
+            val sample = LocationSampleFactory.fromAndroidLocation(
+                location,
+                LocationSampleSource.CONTINUOUS
+            ) ?: return
+            if (!locationSampleGate.accept(sample)) {
+                AppDiagnostics.info(
+                    "background_location_sample_rejected",
+                    "accuracy=${sample.accuracyMeters}"
+                )
+                return
+            }
+            val current = sample.position
+            store.setLastKnownLocation(sample)
 
             val destination = store.getDestination()
-            val distanceMeters = GeoUtils.distanceMeters(current, destination)
+            val distanceMeters = runCatching {
+                GeoUtils.distanceMeters(current, destination)
+            }.getOrNull()?.takeIf { it.isFinite() } ?: return
 
             if (!store.isDestinationAnswered()) {
                 GeofenceHelper.registerDestinationGeofence(this@ForegroundDistanceMonitorService, destination)
@@ -58,29 +110,56 @@ class ForegroundDistanceMonitorService : Service() {
                 GeofenceHelper.clearDestinationGeofence(this@ForegroundDistanceMonitorService)
             }
 
-            if (store.isArrivalRearmRequired() && distanceMeters > ARRIVAL_THRESHOLD_METERS) {
-                store.setArrivalRearmRequired(false)
+            val arrived = ArrivalCoordinator.observeLocation(
+                this@ForegroundDistanceMonitorService,
+                store,
+                sample,
+                destination,
+                distanceMeters,
+                soundPlayer = ::playLocalSound,
+                stopBackgroundMonitor = false
+            )
+            if (arrived) {
+                stopTrackingAfterArrival()
+                return
             }
-            handleArrivalByDistance(destination, distanceMeters)
+            if (store.isDestinationAnswered()) {
+                stopSelf()
+                return
+            }
             updateApproachLiveUpdate(distanceMeters)
             
-            val now = System.currentTimeMillis()
-            val isLiveUpdateRanged = store.isLiveUpdateEnabled() && 
+            val now = SystemClock.elapsedRealtime()
+            val isLiveUpdateRanged = NotificationHelper.isLiveUpdateSupported() &&
+                store.isLiveUpdateEnabled() &&
                 distanceMeters <= store.getLiveUpdateStartDistanceMeters()
             
-            if (isLiveUpdateRanged || now - lastWidgetUpdateTimeMs >= 10 * 60 * 1000L) {
+            val liveUpdateDue = isLiveUpdateRanged &&
+                (lastWidgetUpdateTimeMs == 0L ||
+                    now - lastWidgetUpdateTimeMs >= MIN_LIVE_WIDGET_UPDATE_INTERVAL_MILLIS)
+            if (liveUpdateDue ||
+                lastWidgetUpdateTimeMs == 0L ||
+                now - lastWidgetUpdateTimeMs >= 10 * 60 * 1000L
+            ) {
                 DestinationWidgetProvider.refreshAllWidgets(this@ForegroundDistanceMonitorService)
                 lastWidgetUpdateTimeMs = now
             }
             
-            handleSoundTriggers(distanceMeters)
-            previousDistanceMeters = distanceMeters
+            DistanceEventProcessor.process(
+                this@ForegroundDistanceMonitorService,
+                store,
+                distanceMeters,
+                soundPlayer = ::playLocalSound
+            )
+            updateRequestModeForDistance(distanceMeters)
         }
     }
 
     override fun onCreate() {
         super.onCreate()
+        serviceDestroyed = false
         store = DestinationStore(this)
+        locationSampleGate.reset(store.getLastKnownLocationSample())
         createServiceChannelIfNeeded()
     }
 
@@ -97,28 +176,47 @@ class ForegroundDistanceMonitorService : Service() {
                     startForeground(
                         NOTIFICATION_ID,
                         notification,
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION or
-                            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
                     )
                 } else {
                     startForeground(NOTIFICATION_ID, notification)
                 }
+            }.onFailure {
+                AppDiagnostics.warn("location_fgs_start_foreground_failed", error = it)
             }.isSuccess
             if (!foregroundStarted) {
                 stopSelf()
                 return START_NOT_STICKY
             }
             isForegroundStarted = true
+        } else {
+            runCatching {
+                getSystemService(NotificationManager::class.java).notify(
+                    NOTIFICATION_ID,
+                    buildServiceNotification()
+                )
+            }.onFailure {
+                AppDiagnostics.warn("location_fgs_notification_update_failed", error = it)
+            }
+        }
+        if (!isRequestingLocationUpdates && !isSwitchingLocationRequest) {
+            requestMode = preferredInitialRequestMode()
         }
         startLocationUpdates()
         return START_STICKY
     }
 
     override fun onDestroy() {
-        if (isRequestingLocationUpdates) {
-            fusedClient.removeLocationUpdates(locationCallback)
-            isRequestingLocationUpdates = false
-        }
+        serviceDestroyed = true
+        locationRequestGeneration += 1L
+        requestSwitchToken += 1L
+        val callback = activeLocationCallback
+        activeLocationCallback = null
+        isRequestingLocationUpdates = false
+        isSwitchingLocationRequest = false
+        clearLocationRequestStartTimeout()
+        callback?.let { removeLocationUpdatesSafely(it, "service_destroy") }
+        releaseLocalSoundResources()
         if (isForegroundStarted) {
             stopForeground(STOP_FOREGROUND_REMOVE)
             isForegroundStarted = false
@@ -130,93 +228,361 @@ class ForegroundDistanceMonitorService : Service() {
 
     @SuppressLint("MissingPermission")
     private fun startLocationUpdates() {
-        if (isRequestingLocationUpdates || !hasLocationPermission()) return
+        if (isRequestingLocationUpdates || isSwitchingLocationRequest) return
+        if (!hasLocationPermission()) {
+            AppDiagnostics.warn("background_location_permission_lost")
+            stopSelf()
+            return
+        }
+        val generation = ++locationRequestGeneration
+        val callback = createLocationCallback(generation)
+        activeLocationCallback = callback
         isRequestingLocationUpdates = true
-        runCatching {
-            fusedClient.requestLocationUpdates(locationRequest, locationCallback, mainLooper)
-                .addOnFailureListener {
-                    isRequestingLocationUpdates = false
-                    stopSelf()
-                }
-        }.onFailure {
+        val request = buildLocationRequest(requestMode)
+        val requestTask = runCatching {
+            fusedClient.requestLocationUpdates(request, callback, mainLooper)
+        }.getOrElse {
             isRequestingLocationUpdates = false
+            activeLocationCallback = null
+            AppDiagnostics.warn("background_location_request_threw", error = it)
+            stopSelf()
+            return
+        }
+        lateinit var startTimeout: Runnable
+        startTimeout = Runnable {
+            if (locationRequestStartTimeoutRunnable !== startTimeout) return@Runnable
+            locationRequestStartTimeoutRunnable = null
+            if (!serviceDestroyed &&
+                generation == locationRequestGeneration &&
+                activeLocationCallback === callback
+            ) {
+                AppDiagnostics.warn("background_location_request_timeout")
+                stopSelf()
+            }
+        }
+        locationRequestStartTimeoutRunnable = startTimeout
+        mainHandler.postDelayed(startTimeout, LOCATION_OPERATION_TIMEOUT_MILLIS)
+        requestTask.addOnCompleteListener { task ->
+            if (locationRequestStartTimeoutRunnable === startTimeout) {
+                mainHandler.removeCallbacks(startTimeout)
+                locationRequestStartTimeoutRunnable = null
+            }
+            val stillActive = !serviceDestroyed &&
+                generation == locationRequestGeneration &&
+                activeLocationCallback === callback
+            if (!stillActive) {
+                // Close the add-after-remove race seen with delayed OEM/GMS Tasks.
+                removeLocationUpdatesSafely(callback, "stale_request_completion")
+                return@addOnCompleteListener
+            }
+            if (!task.isSuccessful) {
+                isRequestingLocationUpdates = false
+                activeLocationCallback = null
+                AppDiagnostics.warn("background_location_request_failed", error = task.exception)
+                stopSelf()
+            }
+        }
+    }
+
+    private fun preferredInitialRequestMode(): RequestMode {
+        val last = store.getLastKnownLocationSample()?.position ?: return RequestMode.BALANCED
+        val target = store.getDestination()
+        val distance = runCatching { GeoUtils.distanceMeters(last, target) }.getOrNull()
+            ?: return RequestMode.BALANCED
+        return if (distance <= highAccuracyEnterDistanceMeters()) {
+            RequestMode.HIGH_ACCURACY
+        } else {
+            RequestMode.BALANCED
+        }
+    }
+
+    private fun updateRequestModeForDistance(distanceMeters: Float) {
+        val enterDistance = highAccuracyEnterDistanceMeters()
+        val desired = when (requestMode) {
+            RequestMode.BALANCED -> if (distanceMeters <= enterDistance) {
+                RequestMode.HIGH_ACCURACY
+            } else {
+                RequestMode.BALANCED
+            }
+            RequestMode.HIGH_ACCURACY -> if (distanceMeters >= enterDistance * 1.5f) {
+                RequestMode.BALANCED
+            } else {
+                RequestMode.HIGH_ACCURACY
+            }
+        }
+        if (desired == requestMode || isSwitchingLocationRequest) return
+        if (!isRequestingLocationUpdates) {
+            requestMode = desired
+            startLocationUpdates()
+            return
+        }
+
+        isSwitchingLocationRequest = true
+        val callback = activeLocationCallback
+        if (callback == null) {
+            isSwitchingLocationRequest = false
+            isRequestingLocationUpdates = false
+            requestMode = desired
+            startLocationUpdates()
+            return
+        }
+        val switchToken = ++requestSwitchToken
+        val timeout = Runnable {
+            if (!serviceDestroyed &&
+                switchToken == requestSwitchToken &&
+                isSwitchingLocationRequest
+            ) {
+                requestSwitchToken += 1L
+                locationRequestGeneration += 1L
+                activeLocationCallback = null
+                isRequestingLocationUpdates = false
+                isSwitchingLocationRequest = false
+                AppDiagnostics.warn("background_location_mode_switch_timeout")
+                removeLocationUpdatesSafely(callback, "request_mode_switch_timeout")
+                stopSelf()
+            }
+        }
+        mainHandler.postDelayed(timeout, LOCATION_OPERATION_TIMEOUT_MILLIS)
+        removeLocationUpdatesSafely(callback, "request_mode_switch") { removed ->
+            if (serviceDestroyed || switchToken != requestSwitchToken) {
+                return@removeLocationUpdatesSafely
+            }
+            mainHandler.removeCallbacks(timeout)
+            isSwitchingLocationRequest = false
+            if (!removed) {
+                // Keep the known request authoritative and retry the switch on a later sample.
+                return@removeLocationUpdatesSafely
+            }
+            locationRequestGeneration += 1L
+            if (activeLocationCallback === callback) {
+                activeLocationCallback = null
+                isRequestingLocationUpdates = false
+            }
+            requestMode = desired
+            if (BackgroundLocationUpdater.shouldRunForegroundMonitor(this)) {
+                startLocationUpdates()
+            }
+        }
+    }
+
+    private fun removeLocationUpdatesSafely(
+        callback: LocationCallback,
+        reason: String,
+        attempt: Int = 0,
+        onComplete: ((Boolean) -> Unit)? = null
+    ) {
+        val task = runCatching {
+            fusedClient.removeLocationUpdates(callback)
+        }.getOrElse {
+            AppDiagnostics.warn("background_location_remove_threw", "reason=$reason", it)
+            retryLocationRemovalOrComplete(callback, reason, onComplete, attempt)
+            return
+        }
+        val handled = AtomicBoolean(false)
+        lateinit var timeout: Runnable
+        timeout = Runnable {
+            if (!handled.compareAndSet(false, true)) return@Runnable
+            AppDiagnostics.warn(
+                "background_location_remove_timeout",
+                "reason=$reason, attempt=$attempt"
+            )
+            retryLocationRemovalOrComplete(callback, reason, onComplete, attempt)
+        }
+        mainHandler.postDelayed(timeout, LOCATION_OPERATION_TIMEOUT_MILLIS)
+        task.addOnCompleteListener { completedTask ->
+            if (!handled.compareAndSet(false, true)) return@addOnCompleteListener
+            mainHandler.removeCallbacks(timeout)
+            if (!completedTask.isSuccessful) {
+                AppDiagnostics.warn(
+                    "background_location_remove_failed",
+                    "reason=$reason",
+                    completedTask.exception
+                )
+                retryLocationRemovalOrComplete(callback, reason, onComplete, attempt)
+            } else {
+                onComplete?.invoke(true)
+            }
+        }
+    }
+
+    private fun retryLocationRemovalOrComplete(
+        callback: LocationCallback,
+        reason: String,
+        onComplete: ((Boolean) -> Unit)?,
+        attempt: Int
+    ) {
+        val delay = LOCATION_REMOVAL_RETRY_DELAYS_MILLIS.getOrNull(attempt)
+        if (delay == null) {
+            onComplete?.invoke(false)
+            return
+        }
+        mainHandler.postDelayed(
+            {
+                removeLocationUpdatesSafely(
+                    callback,
+                    reason,
+                    attempt + 1,
+                    onComplete
+                )
+            },
+            delay
+        )
+    }
+
+    private fun clearLocationRequestStartTimeout() {
+        locationRequestStartTimeoutRunnable?.let(mainHandler::removeCallbacks)
+        locationRequestStartTimeoutRunnable = null
+    }
+
+    private fun stopTrackingAfterArrival() {
+        locationRequestGeneration += 1L
+        requestSwitchToken += 1L
+        val callback = activeLocationCallback
+        activeLocationCallback = null
+        isRequestingLocationUpdates = false
+        isSwitchingLocationRequest = false
+        callback?.let { removeLocationUpdatesSafely(it, "arrival_completed") }
+        if (localSoundPlayer != null) {
+            stopAfterLocalSound = true
+        } else {
             stopSelf()
         }
     }
 
-    private fun handleSoundTriggers(distanceMeters: Float) {
-        if (store.isDistance114514SoundEnabled() &&
-            !distance114514SoundPlayed &&
-            entered114514Range(previousDistanceMeters, distanceMeters)
-        ) {
-            distance114514SoundPlayed = true
-            playSound(R.raw.distance_114514km)
-        }
+    private fun playLocalSound(rawResId: Int) {
+        if (rawResId == 0 || serviceDestroyed || !isForegroundStarted) return
+        val priority = SoundEffectPlayer.priorityFor(rawResId)
+        if (localSoundPlayer != null && priority <= localSoundPriority) return
 
-        if (store.isDistanceIntervalSoundEnabled()) {
-            handleIntervalDistanceSound(distanceMeters)
-        } else {
-            lastIntervalBucket = null
-        }
-    }
-
-    private fun handleArrivalByDistance(destination: Destination, distanceMeters: Float) {
-        if (store.isDestinationAnswered()) return
-        if (store.isArrivalRearmRequired()) return
-        if (distanceMeters > ARRIVAL_THRESHOLD_METERS) return
-
-        if (store.isArrivalSoundEnabled()) {
-            playSound(R.raw.arrival_0km)
-        }
-        store.setDestinationAnswered(true)
-        store.setArrivalDestinationName("${destination.lat}, ${destination.lng}")
-        NotificationHelper.cancelApproachProgress(this)
-        NotificationHelper.showDestinationReached(
-            this,
-            getString(R.string.notification_body, "${destination.lat}, ${destination.lng}")
-        )
-        GeofenceHelper.clearDestinationGeofence(this)
-
-        Thread {
-            val resolved = ReverseGeocoder.resolve(this, destination)
-            if (!store.isDestinationAnswered() || store.getDestination() != destination) {
-                return@Thread
-            }
-            store.setArrivalDestinationName(resolved)
-            NotificationHelper.showDestinationReached(
-                this,
-                getString(R.string.notification_body, resolved)
-            )
-            DestinationWidgetProvider.refreshAllWidgets(this)
-        }.start()
-    }
-
-    private fun entered114514Range(previousDistanceMeters: Float?, currentDistanceMeters: Float): Boolean {
-        val previous = previousDistanceMeters ?: return false
-        return previous > DISTANCE_114514_ENTER_THRESHOLD_METERS &&
-            currentDistanceMeters <= DISTANCE_114514_ENTER_THRESHOLD_METERS
-    }
-
-    private fun playSound(rawResId: Int) {
-        SoundEffectPlayer.play(this, rawResId)
-    }
-
-    private fun handleIntervalDistanceSound(distanceMeters: Float) {
-        if (store.isDestinationAnswered()) {
-            lastIntervalBucket = null
+        releaseLocalSoundResources()
+        if (!updateForegroundServiceTypes(includeMediaPlayback = true)) return
+        if (!requestLocalAudioFocus()) {
+            updateForegroundServiceTypes(includeMediaPlayback = false)
             return
         }
-        val intervalMeters = store.getDistanceIntervalSoundMeters().coerceIn(100, 5000)
-        val currentBucket = (distanceMeters / intervalMeters.toFloat()).toInt()
-        val previousBucket = lastIntervalBucket
-        lastIntervalBucket = currentBucket
-        if (previousBucket == null) return
 
-        // Play only when approaching destination and crossing an interval boundary.
-        if (currentBucket < previousBucket) {
-            playSound(R.raw.distance_interval_kankaku)
+        val created = runCatching {
+            MediaPlayer.create(this, rawResId, playbackAudioAttributes, 0)
+        }.onFailure {
+            AppDiagnostics.warn("background_sound_create_failed", error = it)
+        }.getOrNull() ?: run {
+            finishLocalSound()
+            return
+        }
+        localSoundPriority = priority
+        localSoundPlayer = created
+        created.setOnCompletionListener { completedPlayer ->
+            if (localSoundPlayer === completedPlayer) finishLocalSound()
+        }
+        created.setOnErrorListener { failedPlayer, what, extra ->
+            AppDiagnostics.warn(
+                "background_sound_player_error",
+                "what=$what, extra=$extra"
+            )
+            if (localSoundPlayer === failedPlayer) finishLocalSound()
+            true
+        }
+        runCatching { created.start() }
+            .onFailure {
+                AppDiagnostics.warn("background_sound_start_failed", error = it)
+                if (localSoundPlayer === created) finishLocalSound()
+            }
+    }
+
+    private fun requestLocalAudioFocus(): Boolean {
+        val manager = audioManager ?: return true
+        val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+            .setAudioAttributes(playbackAudioAttributes)
+            .setAcceptsDelayedFocusGain(false)
+            .setOnAudioFocusChangeListener(audioFocusChangeListener)
+            .build()
+        val granted = runCatching {
+            manager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        }.onFailure {
+            AppDiagnostics.warn("background_sound_focus_failed", error = it)
+        }.getOrDefault(false)
+        if (granted) localAudioFocusRequest = request
+        return granted
+    }
+
+    private fun finishLocalSound() {
+        releaseLocalSoundResources()
+        if (stopAfterLocalSound) {
+            stopAfterLocalSound = false
+            stopSelf()
+        } else if (!serviceDestroyed && isForegroundStarted) {
+            updateForegroundServiceTypes(includeMediaPlayback = false)
         }
     }
+
+    private fun releaseLocalSoundResources() {
+        val player = localSoundPlayer
+        localSoundPlayer = null
+        localSoundPriority = 0
+        player?.runCatching {
+            setOnCompletionListener(null)
+            setOnErrorListener(null)
+            if (isPlaying) stop()
+        }
+        player?.runCatching { release() }
+
+        val request = localAudioFocusRequest
+        localAudioFocusRequest = null
+        val manager = audioManager
+        if (manager != null && request != null) {
+            runCatching { manager.abandonAudioFocusRequest(request) }
+                .onFailure {
+                    AppDiagnostics.warn("background_sound_focus_release_failed", error = it)
+                }
+        }
+    }
+
+    private fun updateForegroundServiceTypes(includeMediaPlayback: Boolean): Boolean {
+        if (!isForegroundStarted) return false
+        return runCatching {
+            val notification = buildServiceNotification()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val types = ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION or
+                    if (includeMediaPlayback) {
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                    } else {
+                        0
+                    }
+                startForeground(NOTIFICATION_ID, notification, types)
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        }.onFailure {
+            AppDiagnostics.warn(
+                "location_fgs_type_update_failed",
+                "mediaPlayback=$includeMediaPlayback",
+                it
+            )
+        }.isSuccess
+    }
+
+    private fun buildLocationRequest(mode: RequestMode): LocationRequest {
+        return when (mode) {
+            RequestMode.HIGH_ACCURACY -> LocationRequest.Builder(
+                Priority.PRIORITY_HIGH_ACCURACY,
+                HIGH_ACCURACY_INTERVAL_MILLIS
+            )
+                .setMinUpdateIntervalMillis(HIGH_ACCURACY_MIN_INTERVAL_MILLIS)
+                .setMinUpdateDistanceMeters(HIGH_ACCURACY_MIN_DISTANCE_METERS)
+                .build()
+            RequestMode.BALANCED -> LocationRequest.Builder(
+                Priority.PRIORITY_BALANCED_POWER_ACCURACY,
+                BALANCED_INTERVAL_MILLIS
+            )
+                .setMinUpdateIntervalMillis(BALANCED_MIN_INTERVAL_MILLIS)
+                .setMinUpdateDistanceMeters(BALANCED_MIN_DISTANCE_METERS)
+                .setMaxUpdateDelayMillis(BALANCED_MAX_DELAY_MILLIS)
+                .build()
+        }
+    }
+
+    private fun highAccuracyEnterDistanceMeters(): Float =
+        maxOf(MIN_HIGH_ACCURACY_DISTANCE_METERS, store.getLiveUpdateStartDistanceMeters().toFloat())
 
     private fun hasLocationPermission(): Boolean {
         val hasFine = ContextCompat.checkSelfPermission(
@@ -236,7 +602,9 @@ class ForegroundDistanceMonitorService : Service() {
     }
 
     private fun buildServiceNotification(): Notification {
-        val openIntent = Intent(this, MainActivity::class.java)
+        val openIntent = Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
         val pendingIntent = PendingIntent.getActivity(
             this,
             41,
@@ -317,11 +685,6 @@ class ForegroundDistanceMonitorService : Service() {
         private const val CHANNEL_ID = "sound_monitor_channel"
         private const val NOTIFICATION_ID = 1514
         private const val ARRIVAL_THRESHOLD_METERS = 50f
-        private const val DISTANCE_114514_METERS = 114_514f
-        private const val DISTANCE_MATCH_TOLERANCE_METERS = 80f
-        private const val DISTANCE_114514_ENTER_THRESHOLD_METERS =
-            DISTANCE_114514_METERS + DISTANCE_MATCH_TOLERANCE_METERS
-
         fun start(context: Context) {
             val intent = Intent(context, ForegroundDistanceMonitorService::class.java)
             runCatching {
@@ -330,11 +693,31 @@ class ForegroundDistanceMonitorService : Service() {
                 } else {
                     context.startService(intent)
                 }
+            }.onFailure {
+                AppDiagnostics.warn("location_fgs_start_failed", error = it)
             }
         }
 
         fun stop(context: Context) {
             context.stopService(Intent(context, ForegroundDistanceMonitorService::class.java))
         }
+
+        private const val HIGH_ACCURACY_INTERVAL_MILLIS = 5_000L
+        private const val HIGH_ACCURACY_MIN_INTERVAL_MILLIS = 2_500L
+        private const val HIGH_ACCURACY_MIN_DISTANCE_METERS = 5f
+        private const val BALANCED_INTERVAL_MILLIS = 60_000L
+        private const val BALANCED_MIN_INTERVAL_MILLIS = 30_000L
+        private const val BALANCED_MAX_DELAY_MILLIS = 120_000L
+        private const val BALANCED_MIN_DISTANCE_METERS = 25f
+        private const val MIN_HIGH_ACCURACY_DISTANCE_METERS = 1_500f
+        private const val MIN_LIVE_WIDGET_UPDATE_INTERVAL_MILLIS = 10_000L
+        private const val LOCATION_OPERATION_TIMEOUT_MILLIS = 8_000L
+        private val LOCATION_REMOVAL_RETRY_DELAYS_MILLIS = longArrayOf(1_000L, 3_000L)
+        private const val LOCAL_SOUND_DUCK_VOLUME = 0.2f
+    }
+
+    private enum class RequestMode {
+        BALANCED,
+        HIGH_ACCURACY
     }
 }

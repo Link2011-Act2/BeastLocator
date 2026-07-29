@@ -3,7 +3,6 @@ package jp.linkserver.beastlocator
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
-import android.content.Intent
 
 class DestinationWidgetProviderLarge : AppWidgetProvider() {
     override fun onUpdate(
@@ -11,14 +10,16 @@ class DestinationWidgetProviderLarge : AppWidgetProvider() {
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray
     ) {
-        WidgetRenderer.render(context, appWidgetManager, appWidgetIds, R.layout.widget_large)
+        runCatching {
+            WidgetRenderer.render(context, appWidgetManager, appWidgetIds, R.layout.widget_large)
+        }.onFailure {
+            AppDiagnostics.warn("large_widget_update_failed", error = it)
+        }
     }
 
-    override fun onReceive(context: Context, intent: Intent) {
-        super.onReceive(context, intent)
-        if (intent.action == WidgetRenderer.ACTION_REFRESH_WIDGETS) {
-            WidgetRenderer.refreshAllWidgets(context)
-        }
+    override fun onDeleted(context: Context, appWidgetIds: IntArray) {
+        WidgetRenderer.forgetWidgets(appWidgetIds)
+        super.onDeleted(context, appWidgetIds)
     }
 }
 

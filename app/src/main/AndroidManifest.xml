@@ -14,7 +14,9 @@
     <application
         android:name=".RandomDirectionApp"
         android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:enableOnBackInvokedCallback="true"
+        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:localeConfig="@xml/locales_config"
@@ -44,7 +46,8 @@
 
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -79,20 +82,18 @@
             </intent-filter>
         </receiver>
 
-        <receiver android:name=".DestinationWidgetProvider" android:exported="true">
+        <receiver android:name=".DestinationWidgetProvider" android:exported="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="jp.linkserver.beastlocator.ACTION_REFRESH_WIDGETS" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_small_info" />
         </receiver>
 
-        <receiver android:name=".DestinationWidgetProviderLarge" android:exported="true">
+        <receiver android:name=".DestinationWidgetProviderLarge" android:exported="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="jp.linkserver.beastlocator.ACTION_REFRESH_WIDGETS" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"

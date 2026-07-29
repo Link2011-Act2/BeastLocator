@@ -16,6 +16,7 @@ import androidx.core.content.ContextCompat
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.materialswitch.MaterialSwitch
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.asin
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -33,6 +34,8 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var liveUpdateStartDistanceLabel: TextView
     private lateinit var liveUpdateStartDistanceSeek: SeekBar
     private var isSyncingBackgroundLocationUpdateSwitch = false
+    private val reverseGeocodeGeneration = AtomicInteger(0)
+    private var reverseGeocodeRequest: ReverseGeocoder.Request? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -229,25 +232,17 @@ class SettingsActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.debugReachedButton).setOnClickListener {
             val destination = store.getDestination()
-            val expectedDestination = destination
             store.setDestinationAnswered(true)
-            store.setArrivalDestinationName("${destination.lat}, ${destination.lng}")
+            val coordinateText = "${destination.lat}, ${destination.lng}"
+            store.setArrivalDestinationName(coordinateText, resolved = false)
             GeofenceHelper.clearDestinationGeofence(this)
             NotificationHelper.cancelApproachProgress(this)
-            Thread {
-                val destinationText = ReverseGeocoder.resolve(this, destination)
-                runOnUiThread {
-                    if (!store.isDestinationAnswered() || store.getDestination() != expectedDestination) {
-                        return@runOnUiThread
-                    }
-                    store.setArrivalDestinationName(destinationText)
-                    NotificationHelper.showDestinationReached(
-                        this,
-                        getString(R.string.notification_body, destinationText)
-                    )
-                    DestinationWidgetProvider.refreshAllWidgets(this)
-                }
-            }.start()
+            NotificationHelper.showDestinationReached(
+                this,
+                getString(R.string.notification_body, coordinateText)
+            )
+            DestinationWidgetProvider.refreshAllWidgets(this)
+            resolveDebugArrivalName(destination)
         }
 
         debugApproachButton.setOnClickListener {
@@ -290,6 +285,39 @@ class SettingsActivity : AppCompatActivity() {
             findViewById(R.id.backgroundLocationUpdateToggleTitle),
             findViewById(R.id.backgroundLocationUpdateToggleHelp)
         )
+    }
+
+    override fun onDestroy() {
+        reverseGeocodeGeneration.incrementAndGet()
+        reverseGeocodeRequest?.cancel()
+        reverseGeocodeRequest = null
+        super.onDestroy()
+    }
+
+    private fun resolveDebugArrivalName(expectedDestination: Destination) {
+        val generation = reverseGeocodeGeneration.incrementAndGet()
+        reverseGeocodeRequest?.cancel()
+        reverseGeocodeRequest = ReverseGeocoder.resolveAsync(
+            applicationContext,
+            expectedDestination
+        ) { destinationText ->
+            if (isFinishing || isDestroyed || generation != reverseGeocodeGeneration.get()) {
+                return@resolveAsync
+            }
+            if (!store.isDestinationAnswered() || store.getDestination() != expectedDestination) {
+                return@resolveAsync
+            }
+            val coordinateText = "${expectedDestination.lat}, ${expectedDestination.lng}"
+            store.setArrivalDestinationName(
+                destinationText,
+                resolved = destinationText != coordinateText
+            )
+            NotificationHelper.showDestinationReached(
+                this,
+                getString(R.string.notification_body, destinationText)
+            )
+            DestinationWidgetProvider.refreshAllWidgets(this)
+        }
     }
 
     private fun syncBackgroundLocationUpdateToggleUi(
@@ -357,7 +385,9 @@ class SettingsActivity : AppCompatActivity() {
             .setPositiveButton(android.R.string.ok) { _, _ ->
                 val lat = latInput.text.toString().trim().toDoubleOrNull()
                 val lng = lngInput.text.toString().trim().toDoubleOrNull()
-                if (lat == null || lng == null || lat !in -90.0..90.0 || lng !in -180.0..180.0) {
+                if (lat == null || lng == null || !lat.isFinite() || !lng.isFinite() ||
+                    lat !in -90.0..90.0 || lng !in -180.0..180.0
+                ) {
                     Toast.makeText(this, R.string.manual_destination_invalid, Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
@@ -407,7 +437,9 @@ class SettingsActivity : AppCompatActivity() {
             .setView(container)
             .setPositiveButton(android.R.string.ok) { _, _ ->
                 val distanceMeters = input.text.toString().trim().toDoubleOrNull()
-                if (distanceMeters == null || distanceMeters < 0.0 || distanceMeters > 20_000_000.0) {
+                if (distanceMeters == null || !distanceMeters.isFinite() ||
+                    distanceMeters < 0.0 || distanceMeters > 20_000_000.0
+                ) {
                     Toast.makeText(this, R.string.debug_set_distance_invalid, Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
@@ -586,25 +618,10 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun isStableChannel(): Boolean {
-        val versionName = resolveAppVersionName()
-
-        val hyphenPos = versionName.lastIndexOf('-')
-        if (hyphenPos > 0 && hyphenPos < versionName.length - 1) {
-            val channel = versionName.substring(hyphenPos + 1).trim().trim('(', ')')
-            return channel.equals("Stable", ignoreCase = true)
-        }
-
-        val dotPos = versionName.lastIndexOf('.')
-        if (dotPos > 0 && dotPos < versionName.length - 1) {
-            val rawChannel = versionName.substring(dotPos + 1).trim()
-            val hasChannelHint = rawChannel.any { it.isLetter() } ||
-                rawChannel.startsWith("(") || rawChannel.endsWith(")")
-            if (hasChannelHint) {
-                val channel = rawChannel.trim('(', ')', ' ')
-                return channel.equals("Stable", ignoreCase = true)
-            }
-        }
-        return false
+        // Unknown versions remain conservative: only channels recognized by the shared
+        // schedulernittc-compatible detector expose debug controls automatically.
+        return !ReleaseChannelDetector.detect(resolveAppVersionName())
+            .exposesDebugControlsByDefault
     }
 
     private fun resolveAppVersionName(): String {

@@ -1,9 +1,13 @@
 package jp.linkserver.beastlocator
 
 import android.app.Application
+import android.app.Activity
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import com.google.android.material.color.DynamicColors
 
 class RandomDirectionApp : Application() {
@@ -18,7 +22,7 @@ class RandomDirectionApp : Application() {
         super.onCreate()
         AppLanguageController.applyPolicy(this)
         DynamicColors.applyToActivitiesIfAvailable(this)
-        BackgroundLocationUpdater.updateRegistration(this)
+        registerProcessVisibilityCallbacks()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = getSystemService(NotificationManager::class.java)
             val channel = NotificationChannel(
@@ -28,6 +32,42 @@ class RandomDirectionApp : Application() {
             )
             manager.createNotificationChannel(channel)
         }
+    }
+
+    private fun registerProcessVisibilityCallbacks() {
+        val handler = Handler(Looper.getMainLooper())
+        var startedActivityCount = 0
+        var backgroundGeneration = 0L
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityStarted(activity: Activity) {
+                startedActivityCount += 1
+                backgroundGeneration += 1L
+                if (startedActivityCount == 1) {
+                    BackgroundLocationUpdater.setAppInForeground(this@RandomDirectionApp, true)
+                }
+            }
+
+            override fun onActivityStopped(activity: Activity) {
+                startedActivityCount = (startedActivityCount - 1).coerceAtLeast(0)
+                if (startedActivityCount != 0) return
+                val generation = ++backgroundGeneration
+                handler.postDelayed({
+                    if (startedActivityCount == 0 && generation == backgroundGeneration) {
+                        BackgroundLocationUpdater.setAppInForeground(this@RandomDirectionApp, false)
+                    }
+                }, BACKGROUND_TRANSITION_GRACE_MILLIS)
+            }
+
+            override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) = Unit
+            override fun onActivityResumed(activity: Activity) = Unit
+            override fun onActivityPaused(activity: Activity) = Unit
+            override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
+            override fun onActivityDestroyed(activity: Activity) = Unit
+        })
+    }
+
+    companion object {
+        private const val BACKGROUND_TRANSITION_GRACE_MILLIS = 1_500L
     }
 }
 

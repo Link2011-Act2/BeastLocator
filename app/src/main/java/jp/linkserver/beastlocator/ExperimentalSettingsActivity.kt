@@ -69,7 +69,7 @@ class ExperimentalSettingsActivity : AppCompatActivity() {
             BackgroundLocationUpdater.updateRegistration(this)
         }
         distance114514LinkButton.setOnClickListener {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.nicovideo.jp/watch/sm33266722")))
+            openExternalLink("https://www.nicovideo.jp/watch/sm33266722")
         }
 
         distanceIntervalSoundSwitch.isChecked = store.isDistanceIntervalSoundEnabled()
@@ -150,6 +150,14 @@ class ExperimentalSettingsActivity : AppCompatActivity() {
             startActivity(intent)
         }.onFailure {
             Toast.makeText(this, R.string.language_settings_open_failed, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun openExternalLink(url: String) {
+        runCatching {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        }.onFailure {
+            Toast.makeText(this, R.string.external_link_open_failed, Toast.LENGTH_SHORT).show()
         }
     }
 
