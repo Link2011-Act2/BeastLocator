@@ -81,6 +81,12 @@
     <string name="background_location_update_help_forced">音声再生機能が有効なため、この設定は常にオンになります</string>
     <string name="background_location_update_warning_title">⚠️バッテリー消費に関する注意</string>
     <string name="background_location_update_warning_message">アプリを閉じている間も位置情報を使用し、動作中は通知を表示します。端末や利用時間によってはバッテリー消費が増えることがあります</string>
+    <string name="foreground_monitor_button_content_description_off">バックグラウンド監視をオンにする</string>
+    <string name="foreground_monitor_button_content_description_on">バックグラウンド監視をオフにする</string>
+    <string name="foreground_monitor_button_content_description_forced">音声機能によりバックグラウンド監視はオンです</string>
+    <string name="foreground_monitor_button_enabled_message">バックグラウンド監視をオンにしました</string>
+    <string name="foreground_monitor_button_disabled_message">バックグラウンド監視をオフにしました</string>
+    <string name="foreground_monitor_button_forced_message">音声再生機能が有効なため、バックグラウンド監視はオフにできません</string>
     <string name="widget_bearing_mode_title">ウィジェットの方位表示</string>
     <string name="widget_bearing_mode_absolute">絶対方位（北基準）</string>
     <string name="widget_bearing_mode_relative">相対方位（端末の向き基準）</string>

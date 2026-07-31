@@ -103,8 +103,9 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
             return
         }
 
-        // ENTER at 150 m is only a wake-up signal. A bounded fresh session supplies up to two
-        // distinct, accurate fixes before the shared 50 m arrival state machine can confirm.
+        // ENTER at 150 m is only a best-effort wake-up signal. This bounded session samples the
+        // current position; it does not try to follow the whole 150 m -> 50 m journey. Continuous
+        // Activity/foreground-service monitoring remains the reliable path to the 50 m decision.
         requestFreshSamples(
             appContext,
             destination,

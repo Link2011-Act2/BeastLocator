@@ -81,6 +81,12 @@
     <string name="background_location_update_help_forced">This setting is always ON because the audio playback feature is enabled.</string>
     <string name="background_location_update_warning_title">⚠️ Battery Consumption Warning</string>
     <string name="background_location_update_warning_message">This uses your location while the app is closed and shows a notification while active. Battery use may increase depending on your device and usage time.</string>
+    <string name="foreground_monitor_button_content_description_off">Turn on background monitoring</string>
+    <string name="foreground_monitor_button_content_description_on">Turn off background monitoring</string>
+    <string name="foreground_monitor_button_content_description_forced">Background monitoring is on because an audio feature is enabled</string>
+    <string name="foreground_monitor_button_enabled_message">Background monitoring turned on</string>
+    <string name="foreground_monitor_button_disabled_message">Background monitoring turned off</string>
+    <string name="foreground_monitor_button_forced_message">Background monitoring cannot be turned off while an audio playback feature is enabled.</string>
     <string name="widget_bearing_mode_title">Widget Bearing Mode</string>
     <string name="widget_bearing_mode_absolute">Absolute (North-based)</string>
     <string name="widget_bearing_mode_relative">Relative (Device-based)</string>

@@ -81,6 +81,12 @@
     <string name="background_location_update_help_forced">由于音频播放功能已启用，此设置将始终保持开启</string>
     <string name="background_location_update_warning_title">⚠️关于电池消耗的注意事项</string>
     <string name="background_location_update_warning_message">应用关闭时仍会使用位置信息，并在运行期间显示通知。电池消耗可能因设备和使用时长而增加</string>
+    <string name="foreground_monitor_button_content_description_off">开启后台监控</string>
+    <string name="foreground_monitor_button_content_description_on">关闭后台监控</string>
+    <string name="foreground_monitor_button_content_description_forced">由于音频功能已启用，后台监控处于开启状态</string>
+    <string name="foreground_monitor_button_enabled_message">已开启后台监控</string>
+    <string name="foreground_monitor_button_disabled_message">已关闭后台监控</string>
+    <string name="foreground_monitor_button_forced_message">启用音频播放功能时无法关闭后台监控。</string>
     <string name="widget_bearing_mode_title">微件方位显示</string>
     <string name="widget_bearing_mode_absolute">绝对方位（以北为基准）</string>
     <string name="widget_bearing_mode_relative">相对方位（以设备朝向为基准）</string>

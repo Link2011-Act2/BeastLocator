@@ -37,22 +37,43 @@ class RandomDirectionApp : Application() {
     private fun registerProcessVisibilityCallbacks() {
         val handler = Handler(Looper.getMainLooper())
         var startedActivityCount = 0
+        var startedMainActivityCount = 0
         var backgroundGeneration = 0L
+
+        fun reconcileForegroundActivityMonitor() {
+            if (startedActivityCount > 0 && startedMainActivityCount == 0) {
+                ForegroundAppLocationMonitor.start(this@RandomDirectionApp)
+            } else {
+                ForegroundAppLocationMonitor.stop()
+            }
+        }
+
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityStarted(activity: Activity) {
                 startedActivityCount += 1
+                if (activity is MainActivity) {
+                    startedMainActivityCount += 1
+                }
                 backgroundGeneration += 1L
                 if (startedActivityCount == 1) {
                     BackgroundLocationUpdater.setAppInForeground(this@RandomDirectionApp, true)
                 }
+                reconcileForegroundActivityMonitor()
             }
 
             override fun onActivityStopped(activity: Activity) {
                 startedActivityCount = (startedActivityCount - 1).coerceAtLeast(0)
-                if (startedActivityCount != 0) return
+                if (activity is MainActivity) {
+                    startedMainActivityCount = (startedMainActivityCount - 1).coerceAtLeast(0)
+                }
+                if (startedActivityCount != 0) {
+                    reconcileForegroundActivityMonitor()
+                    return
+                }
                 val generation = ++backgroundGeneration
                 handler.postDelayed({
                     if (startedActivityCount == 0 && generation == backgroundGeneration) {
+                        ForegroundAppLocationMonitor.stop()
                         BackgroundLocationUpdater.setAppInForeground(this@RandomDirectionApp, false)
                     }
                 }, BACKGROUND_TRANSITION_GRACE_MILLIS)

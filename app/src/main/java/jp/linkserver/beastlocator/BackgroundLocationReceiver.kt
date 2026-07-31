@@ -60,7 +60,7 @@ class BackgroundLocationReceiver : BroadcastReceiver() {
         if (!store.isDestinationAnswered()) {
             GeofenceHelper.registerDestinationGeofence(appContext, store.getDestination())
             lastAcceptedDistance?.let {
-                updateApproachLiveUpdate(appContext, store, it)
+                ApproachProgressController.update(appContext, store, it)
             }
         } else {
             GeofenceHelper.clearDestinationGeofence(appContext)
@@ -68,39 +68,4 @@ class BackgroundLocationReceiver : BroadcastReceiver() {
         DestinationWidgetProvider.refreshAllWidgets(appContext)
     }
 
-    private fun updateApproachLiveUpdate(
-        context: Context,
-        store: DestinationStore,
-        distanceMeters: Float
-    ) {
-        if (!NotificationHelper.isLiveUpdateSupported()) {
-            NotificationHelper.cancelApproachProgress(context)
-            store.clearLiveUpdateAnchorDistanceMeters()
-            return
-        }
-        if (!store.isLiveUpdateEnabled() || store.isDestinationAnswered()) {
-            NotificationHelper.cancelApproachProgress(context)
-            store.clearLiveUpdateAnchorDistanceMeters()
-            return
-        }
-
-        val arrivalThreshold = ArrivalConfirmationTracker.ARRIVAL_THRESHOLD_METERS
-        val startDistanceMeters = store.getLiveUpdateStartDistanceMeters()
-            .coerceIn(200, 5_000)
-            .toFloat()
-        if (distanceMeters > startDistanceMeters || distanceMeters <= arrivalThreshold) {
-            NotificationHelper.cancelApproachProgress(context)
-            store.clearLiveUpdateAnchorDistanceMeters()
-            return
-        }
-
-        val anchorDistance = store.getLiveUpdateAnchorDistanceMeters()
-            ?.takeIf { it > arrivalThreshold }
-            ?: distanceMeters.also { store.setLiveUpdateAnchorDistanceMeters(it) }
-        val span = (anchorDistance - arrivalThreshold).coerceAtLeast(1f)
-        val progress = (((anchorDistance - distanceMeters) / span) * 100f)
-            .toInt()
-            .coerceIn(0, 100)
-        NotificationHelper.showApproachProgress(context, distanceMeters, progress)
-    }
 }

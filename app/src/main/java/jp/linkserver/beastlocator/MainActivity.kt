@@ -46,7 +46,6 @@ import kotlin.math.sqrt
 class MainActivity : AppCompatActivity(), SensorEventListener {
     companion object {
         private const val ARROW_IMAGE_FORWARD_OFFSET_DEGREES = 45f
-        private const val ARRIVAL_THRESHOLD_METERS = 50f
         private const val DISTANCE_MASK_STEP_KM = 100
         private const val LOCATION_TIMEOUT_MS = 30_000L
         private const val LOCATION_REQUEST_OPERATION_TIMEOUT_MILLIS = 8_000L
@@ -76,6 +75,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private lateinit var store: DestinationStore
     private lateinit var arrowView: ImageView
+    private lateinit var foregroundMonitorToggleButton: ImageButton
     private lateinit var distanceMaskToggleButton: ImageButton
     private lateinit var distanceView: TextView
     private lateinit var directionView: TextView
@@ -177,6 +177,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
 
         arrowView = findViewById(R.id.arrowView)
+        foregroundMonitorToggleButton = findViewById(R.id.foregroundMonitorToggleButton)
         distanceMaskToggleButton = findViewById(R.id.distanceMaskToggleButton)
         distanceView = findViewById(R.id.distanceText)
         directionView = findViewById(R.id.directionText)
@@ -196,6 +197,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
         findViewById<ImageButton>(R.id.settingsButton).setOnClickListener {
             startActivity(android.content.Intent(this, SettingsActivity::class.java))
+        }
+        foregroundMonitorToggleButton.setOnClickListener {
+            toggleForegroundMonitor()
         }
         distanceMaskToggleButton.setOnClickListener {
             val enabled = !store.isManualDistanceMaskEnabled()
@@ -221,6 +225,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             targetHeadingDegrees = headingDegrees
         }
         applyDistanceMaskToggleButtonState()
+        applyForegroundMonitorToggleButtonState()
         arrowView.clearColorFilter()
         updateArrivalUiIfNeeded()
         DestinationWidgetProvider.refreshAllWidgets(this)
@@ -996,39 +1001,70 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun updateApproachLiveUpdate(distanceMeters: Float) {
-        if (!NotificationHelper.isLiveUpdateSupported()) {
-            NotificationHelper.cancelApproachProgress(this)
-            store.clearLiveUpdateAnchorDistanceMeters()
+        ApproachProgressController.update(this, store, distanceMeters)
+    }
+
+    private fun toggleForegroundMonitor() {
+        if (store.isBackgroundLocationUpdateForcedBySound()) {
+            Toast.makeText(
+                this,
+                R.string.foreground_monitor_button_forced_message,
+                Toast.LENGTH_SHORT,
+            ).show()
+            applyForegroundMonitorToggleButtonState()
             return
         }
 
-        if (!store.isLiveUpdateEnabled() || store.isDestinationAnswered()) {
-            NotificationHelper.cancelApproachProgress(this)
-            store.clearLiveUpdateAnchorDistanceMeters()
+        if (store.isBackgroundLocationUpdateEnabled()) {
+            store.setBackgroundLocationUpdateEnabled(false)
+            BackgroundLocationUpdater.updateRegistration(this)
+            applyForegroundMonitorToggleButtonState()
+            Toast.makeText(
+                this,
+                R.string.foreground_monitor_button_disabled_message,
+                Toast.LENGTH_SHORT,
+            ).show()
             return
         }
 
-        val startDistanceMeters = store.getLiveUpdateStartDistanceMeters().coerceIn(200, 5000).toFloat()
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.background_location_update_warning_title)
+            .setMessage(R.string.background_location_update_warning_message)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                store.setBackgroundLocationUpdateEnabled(true)
+                BackgroundLocationUpdater.updateRegistration(this)
+                applyForegroundMonitorToggleButtonState()
+                ensureBackgroundLocationPermission()
+                Toast.makeText(
+                    this,
+                    R.string.foreground_monitor_button_enabled_message,
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
 
-        if (distanceMeters > startDistanceMeters) {
-            NotificationHelper.cancelApproachProgress(this)
-            store.clearLiveUpdateAnchorDistanceMeters()
-            return
-        }
-
-        if (distanceMeters <= ARRIVAL_THRESHOLD_METERS) {
-            NotificationHelper.cancelApproachProgress(this)
-            store.clearLiveUpdateAnchorDistanceMeters()
-            return
-        }
-
-        val anchorDistance = store.getLiveUpdateAnchorDistanceMeters()
-            ?.takeIf { it > ARRIVAL_THRESHOLD_METERS } ?: distanceMeters.also {
-            store.setLiveUpdateAnchorDistanceMeters(it)
-        }
-        val span = (anchorDistance - ARRIVAL_THRESHOLD_METERS).coerceAtLeast(1f)
-        val progress = (((anchorDistance - distanceMeters) / span) * 100f).toInt().coerceIn(0, 100)
-        NotificationHelper.showApproachProgress(this, distanceMeters, progress)
+    private fun applyForegroundMonitorToggleButtonState() {
+        val forced = store.isBackgroundLocationUpdateForcedBySound()
+        val enabled = store.isBackgroundLocationUpdateActive()
+        foregroundMonitorToggleButton.isActivated = enabled
+        foregroundMonitorToggleButton.alpha = if (enabled) 1f else 0.62f
+        foregroundMonitorToggleButton.imageTintList =
+            android.content.res.ColorStateList.valueOf(
+                ContextCompat.getColor(
+                    this,
+                    if (enabled) R.color.expressive_primary
+                    else R.color.expressive_on_surface_variant,
+                ),
+            )
+        foregroundMonitorToggleButton.contentDescription = getString(
+            when {
+                forced -> R.string.foreground_monitor_button_content_description_forced
+                enabled -> R.string.foreground_monitor_button_content_description_on
+                else -> R.string.foreground_monitor_button_content_description_off
+            },
+        )
     }
 
     private fun normalizeRotation(value: Float): Float {

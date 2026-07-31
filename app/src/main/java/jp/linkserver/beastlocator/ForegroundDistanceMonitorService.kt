@@ -656,35 +656,12 @@ class ForegroundDistanceMonitorService : Service() {
     }
 
     private fun updateApproachLiveUpdate(distanceMeters: Float) {
-        if (!NotificationHelper.isLiveUpdateSupported()) {
-            NotificationHelper.cancelApproachProgress(this)
-            store.clearLiveUpdateAnchorDistanceMeters()
-            return
-        }
-        if (!store.isLiveUpdateEnabled() || store.isDestinationAnswered()) {
-            NotificationHelper.cancelApproachProgress(this)
-            store.clearLiveUpdateAnchorDistanceMeters()
-            return
-        }
-        val startDistanceMeters = store.getLiveUpdateStartDistanceMeters().coerceIn(200, 5000).toFloat()
-        if (distanceMeters > startDistanceMeters || distanceMeters <= ARRIVAL_THRESHOLD_METERS) {
-            NotificationHelper.cancelApproachProgress(this)
-            store.clearLiveUpdateAnchorDistanceMeters()
-            return
-        }
-        val anchorDistance = store.getLiveUpdateAnchorDistanceMeters()
-            ?.takeIf { it > ARRIVAL_THRESHOLD_METERS } ?: distanceMeters.also {
-            store.setLiveUpdateAnchorDistanceMeters(it)
-        }
-        val span = (anchorDistance - ARRIVAL_THRESHOLD_METERS).coerceAtLeast(1f)
-        val progress = (((anchorDistance - distanceMeters) / span) * 100f).toInt().coerceIn(0, 100)
-        NotificationHelper.showApproachProgress(this, distanceMeters, progress)
+        ApproachProgressController.update(this, store, distanceMeters)
     }
 
     companion object {
         private const val CHANNEL_ID = "sound_monitor_channel"
         private const val NOTIFICATION_ID = 1514
-        private const val ARRIVAL_THRESHOLD_METERS = 50f
         fun start(context: Context) {
             val intent = Intent(context, ForegroundDistanceMonitorService::class.java)
             runCatching {
