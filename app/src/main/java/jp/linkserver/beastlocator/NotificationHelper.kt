@@ -28,6 +28,18 @@ object NotificationHelper {
     fun isLiveUpdateSupported(): Boolean = Build.VERSION.SDK_INT >= LIVE_UPDATE_MIN_SDK
 
     fun showDestinationReached(context: Context, message: String) {
+        postDestinationReached(context, message, isContentUpdate = false)
+    }
+
+    fun updateDestinationReached(context: Context, message: String) {
+        postDestinationReached(context, message, isContentUpdate = true)
+    }
+
+    private fun postDestinationReached(
+        context: Context,
+        message: String,
+        isContentUpdate: Boolean
+    ) {
         if (!DestinationStore(context).isArrivalNotificationEnabled()) {
             return
         }
@@ -44,14 +56,24 @@ object NotificationHelper {
 
         val pendingIntent = createMainActivityPendingIntent(context, 20)
 
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+        val notificationBuilder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_arrow)
             .setContentTitle(context.getString(R.string.notification_title))
             .setContentText(message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(message))
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
-            .build()
+
+        // Reverse geocoding replaces the coordinate text using the same notification ID.
+        // Leave new arrivals untouched so a later destination can alert normally, but never alert
+        // again for the address-only replacement of the currently displayed notification.
+        if (isContentUpdate) {
+            notificationBuilder
+                .setOnlyAlertOnce(true)
+                .setSilent(true)
+        }
+
+        val notification = notificationBuilder.build()
 
         runCatching {
             NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)

@@ -121,7 +121,7 @@ object ArrivalCoordinator {
                     onNameResolved?.invoke(resolved)
                 }
                 runSideEffect("arrival_resolved_notification_failed") {
-                    NotificationHelper.showDestinationReached(
+                    NotificationHelper.updateDestinationReached(
                         appContext,
                         appContext.getString(R.string.notification_body, resolved)
                     )

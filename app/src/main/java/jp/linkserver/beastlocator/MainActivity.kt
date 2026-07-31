@@ -10,6 +10,7 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.location.Location
 import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
@@ -26,7 +27,6 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -116,8 +116,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var arrivalNameRequestGeneration = 0L
     private var lastArrivalNameAttemptElapsedRealtime = 0L
     private var isShowingPreciseLocationPermissionGuide = false
-    private var isShowingBackgroundPermissionGuide = false
-    private var backgroundPermissionGuideDialog: AlertDialog? = null
+    private lateinit var backgroundPermissionGuide: BackgroundLocationPermissionGuide
     private var updateCheckOperation: AppUpdateManager.Operation? = null
     private var pendingUpdateInfo: AppUpdateInfo? = null
     private var hasStartedAutomaticUpdateCheck = false
@@ -173,6 +172,11 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         setContentView(R.layout.activity_main)
 
         store = DestinationStore(this)
+        backgroundPermissionGuide = BackgroundLocationPermissionGuide(
+            activity = this,
+            store = store,
+            onSettingsLaunched = { skipPermissionGuideOnce = true }
+        )
         fusedClient = LocationServices.getFusedLocationProviderClient(this)
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
 
@@ -268,7 +272,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         arrivalNameRequestGeneration += 1L
         arrivalNameRequest?.cancel()
         arrivalNameRequest = null
-        backgroundPermissionGuideDialog?.dismiss()
+        if (::backgroundPermissionGuide.isInitialized) {
+            backgroundPermissionGuide.dismiss()
+        }
         if (::updateBannerCard.isInitialized) updateBannerCard.animate().cancel()
         updateCheckOperation?.cancel()
         updateCheckOperation = null
@@ -413,7 +419,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private fun maybeLaunchWelcomeScreen(): Boolean {
         if (store.isWelcomeCompleted()) return false
         if (!hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)) return false
-        if (isShowingPreciseLocationPermissionGuide || isShowingBackgroundPermissionGuide) return false
+        if (isShowingPreciseLocationPermissionGuide || backgroundPermissionGuide.isShowing) return false
         startActivity(Intent(this, WelcomeActivity::class.java))
         return true
     }
@@ -448,34 +454,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun ensureBackgroundLocationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
-            hasPermission(Manifest.permission.ACCESS_FINE_LOCATION) &&
-            !hasPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) &&
-            store.isBackgroundLocationUpdateActive() &&
-            !store.isBackgroundPermissionGuideShown()
-        ) {
-            if (isShowingBackgroundPermissionGuide ||
-                backgroundPermissionGuideDialog?.isShowing == true
-            ) {
-                return
-            }
-            isShowingBackgroundPermissionGuide = true
-            backgroundPermissionGuideDialog = MaterialAlertDialogBuilder(this)
-                .setTitle(R.string.background_permission_guide_title)
-                .setMessage(R.string.background_permission_guide_message)
-                .setCancelable(false)
-                .setPositiveButton(R.string.background_permission_guide_positive) { _, _ ->
-                    isShowingBackgroundPermissionGuide = false
-                    if (openAppPermissionSettings()) {
-                        store.setBackgroundPermissionGuideShown(true)
-                    }
-                }
-                .setOnDismissListener {
-                    isShowingBackgroundPermissionGuide = false
-                    backgroundPermissionGuideDialog = null
-                }
-                .show()
-        }
+        backgroundPermissionGuide.showIfNeeded()
     }
 
     private fun hasPermission(permission: String): Boolean {
@@ -576,13 +555,21 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                     return
                 }
                 clearForegroundRequestStartTimeout()
-                val last = result.lastLocation ?: return
-                acceptLocation(
-                    last,
-                    LocationSampleSource.CONTINUOUS,
-                    sessionGeneration,
-                    marksFreshSession = true
-                )
+                LocationBatchProcessor.processOldestFirst(
+                    items = result.locations,
+                    elapsedRealtimeNanos = Location::getElapsedRealtimeNanos,
+                    wallTimeMillis = Location::getTime
+                ) { location ->
+                    acceptLocation(
+                        location,
+                        LocationSampleSource.CONTINUOUS,
+                        sessionGeneration,
+                        marksFreshSession = true
+                    )
+                    sessionGeneration == locationSessionGeneration &&
+                        activeLocationCallback === this &&
+                        !store.isDestinationAnswered()
+                }
             }
         }
         activeLocationCallback = callback
@@ -961,7 +948,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             store.setArrivalDestinationName(resolved, resolved = resolved != fallback)
             arrivalNameView.text = resolved
             if (shouldNotifyWhenResolved) {
-                NotificationHelper.showDestinationReached(
+                NotificationHelper.updateDestinationReached(
                     this,
                     getString(R.string.notification_body, resolved)
                 )
@@ -1028,9 +1015,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
 
         MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.background_location_update_warning_title)
-            .setMessage(R.string.background_location_update_warning_message)
-            .setPositiveButton(android.R.string.ok) { _, _ ->
+            .setTitle(R.string.foreground_monitor_button_enable_dialog_title)
+            .setMessage(R.string.foreground_monitor_button_enable_dialog_message)
+            .setPositiveButton(R.string.foreground_monitor_button_enable_dialog_positive) { _, _ ->
                 store.setBackgroundLocationUpdateEnabled(true)
                 BackgroundLocationUpdater.updateRegistration(this)
                 applyForegroundMonitorToggleButtonState()
@@ -1049,13 +1036,13 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val forced = store.isBackgroundLocationUpdateForcedBySound()
         val enabled = store.isBackgroundLocationUpdateActive()
         foregroundMonitorToggleButton.isActivated = enabled
-        foregroundMonitorToggleButton.alpha = if (enabled) 1f else 0.62f
+        foregroundMonitorToggleButton.alpha = 1f
         foregroundMonitorToggleButton.imageTintList =
             android.content.res.ColorStateList.valueOf(
                 ContextCompat.getColor(
                     this,
-                    if (enabled) R.color.expressive_primary
-                    else R.color.expressive_on_surface_variant,
+                    if (enabled) R.color.expressive_on_primary
+                    else R.color.expressive_on_surface,
                 ),
             )
         foregroundMonitorToggleButton.contentDescription = getString(

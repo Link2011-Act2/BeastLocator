@@ -31,7 +31,8 @@ object GitHubReleaseChecker {
         repositoryUrl: String,
         currentVersion: String,
         userAgentName: String = "BeastLocator",
-        showLatestForTesting: Boolean = false
+        showLatestForTesting: Boolean = false,
+        supportedAbis: List<String> = emptyList()
     ): AppUpdateInfo? {
         val repository = parseGitHubRepository(repositoryUrl)
             ?: error("Unsupported GitHub repository URL")
@@ -39,7 +40,7 @@ object GitHubReleaseChecker {
             owner = repository.owner,
             repo = repository.name,
             userAgent = "$userAgentName/$currentVersion"
-        ).map { it.toUpdateInfo() }
+        ).map { it.toUpdateInfo(supportedAbis) }
         val latest = selectLatestUpdate(releaseInfos, currentVersion, showLatestForTesting)
             ?: return null
         val intermediateReleaseNotes = releaseInfos
@@ -126,14 +127,8 @@ object GitHubReleaseChecker {
         }
     }
 
-    private fun GitHubRelease.toUpdateInfo(): AppUpdateInfo {
-        val apkAsset = assets
-            .filter { it.name.endsWith(".apk", ignoreCase = true) }
-            .maxWithOrNull(
-                compareBy<GitHubReleaseAsset> { it.name.contains("beast", ignoreCase = true) }
-                    .thenBy { it.name.contains("locator", ignoreCase = true) }
-                    .thenBy { it.name.contains("universal", ignoreCase = true) }
-            )
+    private fun GitHubRelease.toUpdateInfo(supportedAbis: List<String>): AppUpdateInfo {
+        val apkAsset = selectSafeApkAsset(assets, supportedAbis)
         val channelSource = listOf(tagName, name, apkAsset?.name.orEmpty())
             .firstOrNull { it.isNotBlank() }
             .orEmpty()
@@ -167,7 +162,7 @@ object GitHubReleaseChecker {
         val assets: List<GitHubReleaseAsset>
     )
 
-    private data class GitHubReleaseAsset(val name: String, val browserDownloadUrl: String)
+    internal data class GitHubReleaseAsset(val name: String, val browserDownloadUrl: String)
 
     private fun parseGitHubRepository(repositoryUrl: String): GitHubRepository? {
         val uri = runCatching { URI(repositoryUrl) }.getOrNull() ?: return null
@@ -187,6 +182,139 @@ object GitHubReleaseChecker {
     private const val READ_TIMEOUT_MILLIS = 15_000
     private const val MAX_RESPONSE_CHARS = 2 * 1024 * 1024
 }
+
+/**
+ * Selects an APK only when the best safe candidate is unambiguous.
+ *
+ * GitHub preserves the release asset order, but relying on that order can make an updater pick a
+ * debug, incompatible-ABI or otherwise unintended artifact accidentally when a release contains
+ * several APKs. Unsafe and incompatible build variants are removed first. Explicit universal,
+ * product and release names then narrow the set; if more than one equally suitable candidate
+ * remains, no APK is selected.
+ */
+internal fun selectSafeApkAsset(
+    assets: List<GitHubReleaseChecker.GitHubReleaseAsset>,
+    supportedAbis: List<String> = emptyList()
+): GitHubReleaseChecker.GitHubReleaseAsset? {
+    val normalizedSupportedAbis = supportedAbis.mapNotNull(::normalizeAbi).distinct()
+    val supportedAbiSet = normalizedSupportedAbis.toSet()
+    var candidates = assets.filter { asset ->
+        asset.name.endsWith(".apk", ignoreCase = true) &&
+            !isUnsafeApkAssetName(asset.name) &&
+            asset.name.isCompatibleWith(supportedAbiSet)
+    }
+    if (candidates.size <= 1) return candidates.singleOrNull()
+
+    candidates = preferMatching(candidates) { it.name.hasApkNameMarker("universal") }
+    candidates = preferPrimaryAbi(candidates, normalizedSupportedAbis)
+    candidates = preferMatching(candidates) { it.name.hasBeastLocatorMarker() }
+    candidates = preferMatching(candidates) { it.name.hasApkNameMarker("release") }
+    return candidates.singleOrNull()
+}
+
+private fun preferPrimaryAbi(
+    assets: List<GitHubReleaseChecker.GitHubReleaseAsset>,
+    supportedAbis: List<String>
+): List<GitHubReleaseChecker.GitHubReleaseAsset> {
+    if (assets.size <= 1 || supportedAbis.isEmpty()) return assets
+    val ranks = supportedAbis.withIndex().associate { (index, abi) -> abi to index }
+    val rankedAssets = assets.map { asset ->
+        asset to asset.name.explicitApkAbis().mapNotNull(ranks::get).minOrNull()
+    }
+    if (rankedAssets.any { (_, rank) -> rank == null }) return assets
+    val bestRank = rankedAssets.minOf { (_, rank) -> requireNotNull(rank) }
+    return rankedAssets.filter { (_, rank) -> rank == bestRank }.map { (asset, _) -> asset }
+}
+
+private fun String.isCompatibleWith(supportedAbis: Set<String>): Boolean {
+    if (hasApkNameMarker("universal")) return true
+    val explicitAbis = explicitApkAbis()
+    return explicitAbis.isEmpty() || explicitAbis.any(supportedAbis::contains)
+}
+
+private fun String.explicitApkAbis(): Set<String> = buildSet {
+    ABI_NAME_PATTERNS.forEach { (abi, pattern) ->
+        if (pattern.containsMatchIn(this@explicitApkAbis)) add(abi)
+    }
+}
+
+private fun normalizeAbi(value: String): String? = when (
+    value.lowercase(Locale.US).filter(Char::isLetterOrDigit)
+) {
+    "arm64v8a", "aarch64" -> ABI_ARM64_V8A
+    "armeabiv7a", "armv7a" -> ABI_ARMEABI_V7A
+    "x8664" -> ABI_X86_64
+    "x86" -> ABI_X86
+    else -> null
+}
+
+private fun isUnsafeApkAssetName(name: String): Boolean {
+    val normalized = name.lowercase(Locale.US).removeSuffix(".apk")
+    val compact = normalized.filter(Char::isLetterOrDigit)
+    if (UNSAFE_COMPACT_APK_MARKERS.any(compact::contains)) return true
+    return name.apkNameTokens().any { it in UNSAFE_APK_TOKENS }
+}
+
+private fun String.hasBeastLocatorMarker(): Boolean {
+    val compact = lowercase(Locale.US).filter(Char::isLetterOrDigit)
+    return compact.contains("beastlocator") ||
+        (hasApkNameMarker("beast") && hasApkNameMarker("locator"))
+}
+
+private fun String.hasApkNameMarker(marker: String): Boolean =
+    apkNameTokens().any { it == marker }
+
+private fun String.apkNameTokens(): List<String> =
+    removeSuffix(".apk")
+        .removeSuffix(".APK")
+        .replace(CAMEL_CASE_BOUNDARY_REGEX, "\$1_\$2")
+        .lowercase(Locale.US)
+        .split(NON_ALPHANUMERIC_REGEX)
+        .filter(String::isNotBlank)
+
+private inline fun <T> preferMatching(items: List<T>, predicate: (T) -> Boolean): List<T> {
+    val preferred = items.filter(predicate)
+    return preferred.ifEmpty { items }
+}
+
+private val NON_ALPHANUMERIC_REGEX = Regex("[^a-z0-9]+")
+private val CAMEL_CASE_BOUNDARY_REGEX = Regex("([a-z0-9])([A-Z])")
+private const val ABI_ARM64_V8A = "arm64-v8a"
+private const val ABI_ARMEABI_V7A = "armeabi-v7a"
+private const val ABI_X86_64 = "x86_64"
+private const val ABI_X86 = "x86"
+private val ABI_NAME_PATTERNS = linkedMapOf(
+    ABI_ARM64_V8A to Regex(
+        "(?:^|[^a-z0-9])arm64[-_.]?v8a(?:$|[^a-z0-9])",
+        RegexOption.IGNORE_CASE
+    ),
+    ABI_ARMEABI_V7A to Regex(
+        "(?:^|[^a-z0-9])armeabi[-_.]?v7a(?:$|[^a-z0-9])",
+        RegexOption.IGNORE_CASE
+    ),
+    ABI_X86_64 to Regex(
+        "(?:^|[^a-z0-9])x86[-_.]?64(?:$|[^a-z0-9])",
+        RegexOption.IGNORE_CASE
+    ),
+    ABI_X86 to Regex(
+        "(?:^|[^a-z0-9])x86(?![-_.]?64)(?:$|[^a-z0-9])",
+        RegexOption.IGNORE_CASE
+    )
+)
+private val UNSAFE_COMPACT_APK_MARKERS = setOf(
+    "androidtest",
+    "benchmark",
+    "debug",
+    "unsigned",
+    "unaligned"
+)
+private val UNSAFE_APK_TOKENS = setOf(
+    "test",
+    "tests",
+    "testing",
+    "profile",
+    "profiling"
+)
 
 internal fun selectLatestUpdate(
     releases: List<AppUpdateInfo>,

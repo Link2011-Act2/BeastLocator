@@ -11,6 +11,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.location.Location
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
@@ -80,79 +81,104 @@ class ForegroundDistanceMonitorService : Service() {
                 return
             }
             clearLocationRequestStartTimeout()
-            val location = result.lastLocation ?: return
             if (store.isDebugDistanceOverrideEnabled()) {
                 stopSelf()
                 return
             }
-            val sample = LocationSampleFactory.fromAndroidLocation(
-                location,
-                LocationSampleSource.CONTINUOUS
-            ) ?: return
-            if (!locationSampleGate.accept(sample)) {
-                AppDiagnostics.info(
-                    "background_location_sample_rejected",
-                    "accuracy=${sample.accuracyMeters}"
-                )
-                return
-            }
-            val current = sample.position
-            store.setLastKnownLocation(sample)
 
-            val destination = store.getDestination()
-            val distanceMeters = runCatching {
-                GeoUtils.distanceMeters(current, destination)
-            }.getOrNull()?.takeIf { it.isFinite() } ?: return
-
-            if (!store.isDestinationAnswered()) {
-                GeofenceHelper.registerDestinationGeofence(this@ForegroundDistanceMonitorService, destination)
-            } else {
-                GeofenceHelper.clearDestinationGeofence(this@ForegroundDistanceMonitorService)
+            var latestAcceptedDistanceMeters: Float? = null
+            LocationBatchProcessor.processOldestFirst(
+                items = result.locations,
+                elapsedRealtimeNanos = Location::getElapsedRealtimeNanos,
+                wallTimeMillis = Location::getTime
+            ) { location ->
+                processContinuousLocation(location)?.let { distanceMeters ->
+                    latestAcceptedDistanceMeters = distanceMeters
+                }
+                !serviceDestroyed &&
+                    requestGeneration == locationRequestGeneration &&
+                    activeLocationCallback === this &&
+                    !store.isDestinationAnswered()
             }
 
-            val arrived = ArrivalCoordinator.observeLocation(
-                this@ForegroundDistanceMonitorService,
-                store,
-                sample,
-                destination,
-                distanceMeters,
-                soundPlayer = ::playLocalSound,
-                stopBackgroundMonitor = false
-            )
-            if (arrived) {
-                stopTrackingAfterArrival()
-                return
-            }
-            if (store.isDestinationAnswered()) {
-                stopSelf()
-                return
-            }
-            updateApproachLiveUpdate(distanceMeters)
-            
-            val now = SystemClock.elapsedRealtime()
-            val isLiveUpdateRanged = NotificationHelper.isLiveUpdateSupported() &&
-                store.isLiveUpdateEnabled() &&
-                distanceMeters <= store.getLiveUpdateStartDistanceMeters()
-            
-            val liveUpdateDue = isLiveUpdateRanged &&
-                (lastWidgetUpdateTimeMs == 0L ||
-                    now - lastWidgetUpdateTimeMs >= MIN_LIVE_WIDGET_UPDATE_INTERVAL_MILLIS)
-            if (liveUpdateDue ||
-                lastWidgetUpdateTimeMs == 0L ||
-                now - lastWidgetUpdateTimeMs >= 10 * 60 * 1000L
+            if (!serviceDestroyed &&
+                requestGeneration == locationRequestGeneration &&
+                activeLocationCallback === this &&
+                !store.isDestinationAnswered()
             ) {
-                DestinationWidgetProvider.refreshAllWidgets(this@ForegroundDistanceMonitorService)
-                lastWidgetUpdateTimeMs = now
+                latestAcceptedDistanceMeters?.let(::updateRequestModeForDistance)
             }
-            
-            DistanceEventProcessor.process(
-                this@ForegroundDistanceMonitorService,
-                store,
-                distanceMeters,
-                soundPlayer = ::playLocalSound
-            )
-            updateRequestModeForDistance(distanceMeters)
         }
+    }
+
+    private fun processContinuousLocation(location: Location): Float? {
+        val sample = LocationSampleFactory.fromAndroidLocation(
+            location,
+            LocationSampleSource.CONTINUOUS
+        ) ?: return null
+        if (!locationSampleGate.accept(sample)) {
+            AppDiagnostics.info(
+                "background_location_sample_rejected",
+                "accuracy=${sample.accuracyMeters}"
+            )
+            return null
+        }
+        val current = sample.position
+        store.setLastKnownLocation(sample)
+
+        val destination = store.getDestination()
+        val distanceMeters = runCatching {
+            GeoUtils.distanceMeters(current, destination)
+        }.getOrNull()?.takeIf { it.isFinite() } ?: return null
+
+        if (!store.isDestinationAnswered()) {
+            GeofenceHelper.registerDestinationGeofence(this, destination)
+        } else {
+            GeofenceHelper.clearDestinationGeofence(this)
+        }
+
+        val arrived = ArrivalCoordinator.observeLocation(
+            this,
+            store,
+            sample,
+            destination,
+            distanceMeters,
+            soundPlayer = ::playLocalSound,
+            stopBackgroundMonitor = false
+        )
+        if (arrived) {
+            stopTrackingAfterArrival()
+            return null
+        }
+        if (store.isDestinationAnswered()) {
+            stopSelf()
+            return null
+        }
+        updateApproachLiveUpdate(distanceMeters)
+
+        val now = SystemClock.elapsedRealtime()
+        val isLiveUpdateRanged = NotificationHelper.isLiveUpdateSupported() &&
+            store.isLiveUpdateEnabled() &&
+            distanceMeters <= store.getLiveUpdateStartDistanceMeters()
+
+        val liveUpdateDue = isLiveUpdateRanged &&
+            (lastWidgetUpdateTimeMs == 0L ||
+                now - lastWidgetUpdateTimeMs >= MIN_LIVE_WIDGET_UPDATE_INTERVAL_MILLIS)
+        if (liveUpdateDue ||
+            lastWidgetUpdateTimeMs == 0L ||
+            now - lastWidgetUpdateTimeMs >= 10 * 60 * 1000L
+        ) {
+            DestinationWidgetProvider.refreshAllWidgets(this)
+            lastWidgetUpdateTimeMs = now
+        }
+
+        DistanceEventProcessor.process(
+            this,
+            store,
+            distanceMeters,
+            soundPlayer = ::playLocalSound
+        )
+        return distanceMeters
     }
 
     override fun onCreate() {
@@ -576,7 +602,6 @@ class ForegroundDistanceMonitorService : Service() {
             )
                 .setMinUpdateIntervalMillis(BALANCED_MIN_INTERVAL_MILLIS)
                 .setMinUpdateDistanceMeters(BALANCED_MIN_DISTANCE_METERS)
-                .setMaxUpdateDelayMillis(BALANCED_MAX_DELAY_MILLIS)
                 .build()
         }
     }
@@ -684,7 +709,6 @@ class ForegroundDistanceMonitorService : Service() {
         private const val HIGH_ACCURACY_MIN_DISTANCE_METERS = 5f
         private const val BALANCED_INTERVAL_MILLIS = 60_000L
         private const val BALANCED_MIN_INTERVAL_MILLIS = 30_000L
-        private const val BALANCED_MAX_DELAY_MILLIS = 120_000L
         private const val BALANCED_MIN_DISTANCE_METERS = 25f
         private const val MIN_HIGH_ACCURACY_DISTANCE_METERS = 1_500f
         private const val MIN_LIVE_WIDGET_UPDATE_INTERVAL_MILLIS = 10_000L

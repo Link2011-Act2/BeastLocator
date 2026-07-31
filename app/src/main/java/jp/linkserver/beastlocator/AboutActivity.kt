@@ -19,6 +19,7 @@ class AboutActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_about)
+        SystemBarInsetApplier.apply(findViewById(R.id.aboutRoot))
 
         val (versionName, versionCode) = resolveAppVersionInfo()
         val (simpleVersion, _) = splitVersionAndChannel(versionName)

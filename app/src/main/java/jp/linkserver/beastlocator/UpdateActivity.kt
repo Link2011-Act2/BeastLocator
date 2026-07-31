@@ -11,12 +11,9 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.net.toUri
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.updatePadding
+import androidx.lifecycle.ViewModelProvider
 import io.noties.markwon.Markwon
 import io.noties.markwon.ext.tables.TablePlugin
-import java.io.File
 import java.util.Locale
 
 class UpdateActivity : AppCompatActivity() {
@@ -25,12 +22,11 @@ class UpdateActivity : AppCompatActivity() {
     private lateinit var progressBar: ProgressBar
     private lateinit var statusText: TextView
     private lateinit var markwon: Markwon
-    private var downloadOperation: AppUpdateManager.Operation? = null
-    private var waitingForInstallPermission = false
-    private var hasOpenedInstallSettings = false
+    private lateinit var downloadViewModel: UpdateDownloadViewModel
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        downloadViewModel = ViewModelProvider(this)[UpdateDownloadViewModel::class.java]
         updateInfo = readUpdateInfo(intent) ?: run {
             finish()
             return
@@ -64,7 +60,7 @@ class UpdateActivity : AppCompatActivity() {
             if (updateInfo.apkDownloadUrl == null) View.GONE else View.VISIBLE
         downloadButton.setText(R.string.update_download_install_button)
         downloadButton.setOnClickListener {
-            if (downloadOperation != null) {
+            if (downloadViewModel.state.value is UpdateDownloadState.Downloading) {
                 cancelDownload()
             } else if (updateInfo.apkDownloadUrl == null) {
                 openReleasePage()
@@ -75,14 +71,14 @@ class UpdateActivity : AppCompatActivity() {
         findViewById<Button>(R.id.updateOpenReleaseButton).setOnClickListener {
             openReleasePage()
         }
+        downloadViewModel.state.observe(this, ::renderDownloadState)
     }
 
     override fun onResume() {
         super.onResume()
-        if (waitingForInstallPermission && hasOpenedInstallSettings) {
-            hasOpenedInstallSettings = false
+        if (downloadViewModel.consumeInstallSettingsReturn()) {
             if (AppUpdateManager.canRequestPackageInstalls(this)) {
-                waitingForInstallPermission = false
+                downloadViewModel.clearInstallPermissionRequest()
                 startDownload()
             } else {
                 statusText.setText(R.string.update_install_permission_required)
@@ -90,46 +86,50 @@ class UpdateActivity : AppCompatActivity() {
         }
     }
 
-    override fun onDestroy() {
-        downloadOperation?.cancel()
-        downloadOperation = null
-        super.onDestroy()
-    }
-
     private fun prepareDownload() {
         if (!AppUpdateManager.canRequestPackageInstalls(this)) {
-            waitingForInstallPermission = true
-            hasOpenedInstallSettings = true
+            downloadViewModel.beginInstallPermissionRequest()
             statusText.setText(R.string.update_install_permission_guide)
             runCatching { AppUpdateManager.openUnknownAppInstallSettings(this) }
                 .onFailure {
-                    hasOpenedInstallSettings = false
+                    downloadViewModel.markInstallSettingsOpenFailed()
                     statusText.setText(R.string.update_install_settings_failed)
-                }
+            }
             return
         }
+        downloadViewModel.clearInstallPermissionRequest()
         startDownload()
     }
 
     private fun startDownload() {
-        progressBar.visibility = View.VISIBLE
-        progressBar.isIndeterminate = true
-        statusText.setText(R.string.update_downloading)
-        downloadButton.setText(R.string.update_cancel_download_button)
-        downloadOperation = runCatching {
-            AppUpdateManager.downloadApk(
-                context = this,
-                updateInfo = updateInfo,
-                onProgress = ::showProgress,
-                onResult = ::handleDownloadResult
-            )
-        }.getOrElse {
-            showFailure(it)
-            null
+        downloadViewModel.startDownload(updateInfo)
+    }
+
+    private fun renderDownloadState(state: UpdateDownloadState) {
+        when (state) {
+            UpdateDownloadState.Idle -> {
+                progressBar.visibility = View.GONE
+                downloadButton.setText(R.string.update_download_install_button)
+            }
+            is UpdateDownloadState.Downloading -> showProgress(state.progress)
+            is UpdateDownloadState.Downloaded -> openDownloadedApk(state)
+            is UpdateDownloadState.Failed -> showFailure(state.error)
+            UpdateDownloadState.Cancelled -> {
+                progressBar.visibility = View.GONE
+                statusText.setText(R.string.update_download_cancelled)
+                downloadButton.setText(R.string.update_download_install_button)
+            }
         }
     }
 
-    private fun showProgress(progress: ApkDownloadProgress) {
+    private fun showProgress(progress: ApkDownloadProgress?) {
+        progressBar.visibility = View.VISIBLE
+        downloadButton.setText(R.string.update_cancel_download_button)
+        if (progress == null) {
+            progressBar.isIndeterminate = true
+            statusText.setText(R.string.update_downloading)
+            return
+        }
         val total = progress.totalBytes
         if (total != null && total > 0L) {
             val percent = ((progress.downloadedBytes * 100L) / total).toInt().coerceIn(0, 100)
@@ -150,34 +150,26 @@ class UpdateActivity : AppCompatActivity() {
         }
     }
 
-    private fun handleDownloadResult(result: Result<File>) {
-        downloadOperation = null
-        result.onSuccess { apkFile ->
-            progressBar.visibility = View.GONE
-            statusText.setText(R.string.update_opening_installer)
-            downloadButton.setText(R.string.update_download_install_button)
-            runCatching { AppUpdateManager.openPackageInstaller(this, apkFile) }
-                .onFailure(::showFailure)
-        }.onFailure(::showFailure)
+    private fun openDownloadedApk(state: UpdateDownloadState.Downloaded) {
+        progressBar.visibility = View.GONE
+        statusText.setText(R.string.update_opening_installer)
+        downloadButton.setText(R.string.update_download_install_button)
+        val apkFile = downloadViewModel.claimDownloadedFile(state) ?: return
+        runCatching { AppUpdateManager.openPackageInstaller(this, apkFile) }
+            .onFailure(downloadViewModel::reportInstallerFailure)
     }
 
     private fun showFailure(error: Throwable) {
-        downloadOperation = null
         progressBar.visibility = View.GONE
         downloadButton.setText(R.string.update_download_install_button)
         statusText.text = getString(
             R.string.update_download_failed,
             error.localizedMessage ?: error.javaClass.simpleName
         )
-        AppDiagnostics.warn("update_download_failed", error = error)
     }
 
     private fun cancelDownload() {
-        downloadOperation?.cancel()
-        downloadOperation = null
-        progressBar.visibility = View.GONE
-        statusText.setText(R.string.update_download_cancelled)
-        downloadButton.setText(R.string.update_download_install_button)
+        downloadViewModel.cancelDownload()
     }
 
     private fun openReleasePage() {
@@ -196,22 +188,7 @@ class UpdateActivity : AppCompatActivity() {
     }
 
     private fun applySystemBarInsets() {
-        val root = findViewById<View>(R.id.updateRoot)
-        val initialLeft = root.paddingLeft
-        val initialTop = root.paddingTop
-        val initialRight = root.paddingRight
-        val initialBottom = root.paddingBottom
-        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.updatePadding(
-                left = initialLeft + systemBars.left,
-                top = initialTop + systemBars.top,
-                right = initialRight + systemBars.right,
-                bottom = initialBottom + systemBars.bottom,
-            )
-            insets
-        }
-        ViewCompat.requestApplyInsets(root)
+        SystemBarInsetApplier.apply(findViewById(R.id.updateRoot))
     }
 
     private fun channelLabel(channel: ReleaseChannel): String = when (channel) {

@@ -60,4 +60,127 @@ class GitHubReleaseCheckerTest {
             selectLatestUpdate(listOf(release), "0.9.6-IntDev_rev0", true)
         )
     }
+
+    @Test
+    fun unsafeApkVariantsAreNeverSelected() {
+        val selected = selectSafeApkAsset(
+            listOf(
+                asset("BeastLocator-universal-debug.apk"),
+                asset("BeastLocator-universal-unsigned.apk"),
+                asset("BeastLocator-androidTest.apk"),
+                asset("BeastLocator-test-release.apk"),
+                asset("BeastLocatorTestRelease.apk"),
+                asset("BeastLocator-benchmark.apk"),
+                asset("BeastLocator-universal-release.apk")
+            )
+        )
+
+        assertEquals("BeastLocator-universal-release.apk", selected?.name)
+    }
+
+    @Test
+    fun universalProductReleaseApkIsPreferredDeterministically() {
+        val selected = selectSafeApkAsset(
+            listOf(
+                asset("app-release.apk"),
+                asset("BeastLocator-arm64-v8a-release.apk"),
+                asset("app-universal-release.apk"),
+                asset("BeastLocator-universal.apk"),
+                asset("BeastLocator-universal-release.apk")
+            )
+        )
+
+        assertEquals("BeastLocator-universal-release.apk", selected?.name)
+    }
+
+    @Test
+    fun equallySafeApksAreRejectedAsAmbiguous() {
+        val selected = selectSafeApkAsset(
+            listOf(
+                asset("BeastLocator-universal-release-one.apk"),
+                asset("BeastLocator-universal-release-two.apk")
+            )
+        )
+
+        assertNull(selected)
+    }
+
+    @Test
+    fun soleSafeApkCanBeSelectedWithoutNamingConvention() {
+        val selected = selectSafeApkAsset(
+            listOf(
+                asset("app.apk"),
+                asset("app-debug.apk")
+            )
+        )
+
+        assertEquals("app.apk", selected?.name)
+    }
+
+    @Test
+    fun apkForSupportedAbiIsSelected() {
+        val selected = selectSafeApkAsset(
+            assets = listOf(
+                asset("BeastLocator-arm64-v8a-release.apk"),
+                asset("BeastLocator-x86-release.apk")
+            ),
+            supportedAbis = listOf("arm64-v8a", "armeabi-v7a")
+        )
+
+        assertEquals("BeastLocator-arm64-v8a-release.apk", selected?.name)
+    }
+
+    @Test
+    fun soleApkForUnsupportedAbiIsRejected() {
+        val selected = selectSafeApkAsset(
+            assets = listOf(asset("BeastLocator-arm64-v8a-release.apk")),
+            supportedAbis = listOf("x86_64", "x86")
+        )
+
+        assertNull(selected)
+    }
+
+    @Test
+    fun universalApkIsPreferredOverCompatibleAbiApk() {
+        val selected = selectSafeApkAsset(
+            assets = listOf(
+                asset("BeastLocator-arm64-v8a-release.apk"),
+                asset("BeastLocator-universal-release.apk")
+            ),
+            supportedAbis = listOf("arm64-v8a", "armeabi-v7a")
+        )
+
+        assertEquals("BeastLocator-universal-release.apk", selected?.name)
+    }
+
+    @Test
+    fun firstSupportedAbiIsPreferredWhenSeveralAbiSplitsAreCompatible() {
+        val selected = selectSafeApkAsset(
+            assets = listOf(
+                asset("BeastLocator-armeabi-v7a-release.apk"),
+                asset("BeastLocator-arm64-v8a-release.apk")
+            ),
+            supportedAbis = listOf("arm64-v8a", "armeabi-v7a")
+        )
+
+        assertEquals("BeastLocator-arm64-v8a-release.apk", selected?.name)
+    }
+
+    @Test
+    fun x86_64MarkerIsDistinctFromX86Marker() {
+        val selected = selectSafeApkAsset(
+            assets = listOf(
+                asset("BeastLocator-x86-release.apk"),
+                asset("BeastLocator-x86_64-release.apk")
+            ),
+            supportedAbis = listOf("x86_64", "x86")
+        )
+
+        assertEquals("BeastLocator-x86_64-release.apk", selected?.name)
+    }
+
+    private fun asset(name: String) = GitHubReleaseChecker.GitHubReleaseAsset(
+        name = name,
+        browserDownloadUrl = "https://github.com/example/project/releases/download/v1/$name"
+    )
 }

@@ -2,7 +2,9 @@ package jp.linkserver.beastlocator
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
+import android.content.pm.Signature
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -14,6 +16,7 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
+import java.security.MessageDigest
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.Future
 import java.util.concurrent.ThreadPoolExecutor
@@ -77,7 +80,8 @@ object AppUpdateManager {
                 GitHubReleaseChecker.check(
                     repositoryUrl = REPOSITORY_URL,
                     currentVersion = currentVersion,
-                    showLatestForTesting = isShowLatestReleaseForTestingEnabled(appContext)
+                    showLatestForTesting = isShowLatestReleaseForTestingEnabled(appContext),
+                    supportedAbis = Build.SUPPORTED_ABIS.toList()
                 )
             }
             appContext.getSharedPreferences(UPDATE_PREFS, Context.MODE_PRIVATE)
@@ -113,7 +117,7 @@ object AppUpdateManager {
                     .getOrThrow()
                 file
             }
-            postIfActive(cancelled) { onResult(result) }
+            postDownloadResultIfActive(cancelled, result, onResult)
         }
     }
 
@@ -248,6 +252,26 @@ object AppUpdateManager {
         }
     }
 
+    private fun postDownloadResultIfActive(
+        cancelled: AtomicBoolean,
+        result: Result<File>,
+        onResult: (Result<File>) -> Unit
+    ) {
+        if (cancelled.get()) {
+            result.getOrNull()?.delete()
+            return
+        }
+        mainHandler.post {
+            if (cancelled.get()) {
+                result.getOrNull()?.delete()
+            } else {
+                runCatching { onResult(result) }.onFailure {
+                    AppDiagnostics.warn("updater_callback_failed", error = it)
+                }
+            }
+        }
+    }
+
     private fun downloadApkFile(
         context: Context,
         downloadUrl: String,
@@ -345,18 +369,67 @@ object AppUpdateManager {
     }
 
     private fun validateApkPackage(context: Context, apkFile: File) {
-        val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.packageManager.getPackageArchiveInfo(
-                apkFile.absolutePath,
-                PackageManager.PackageInfoFlags.of(0)
-            )
-        } else {
-            @Suppress("DEPRECATION")
-            context.packageManager.getPackageArchiveInfo(apkFile.absolutePath, 0)
-        }
-        check(info?.packageName == context.packageName) {
+        val packageManager = context.packageManager
+        val archiveInfo = getArchivePackageInfo(packageManager, apkFile)
+            ?: error("Downloaded file is not a valid APK")
+        check(archiveInfo.packageName == context.packageName) {
             "Downloaded APK is not a BeastLocator package"
         }
+        val installedInfo = getInstalledPackageInfo(packageManager, context.packageName)
+        val installedVersionCode = installedInfo.longVersionCodeCompat()
+        val archiveVersionCode = archiveInfo.longVersionCodeCompat()
+        check(isUpdateVersionCodeAcceptable(installedVersionCode, archiveVersionCode)) {
+            "Downloaded APK version is older than the installed app"
+        }
+        val installedSigningIdentity = installedInfo.toSigningIdentity()
+        val archiveSigningIdentity = archiveInfo.toSigningIdentity()
+        check(isSigningLineageCompatible(installedSigningIdentity, archiveSigningIdentity)) {
+            "Downloaded APK signature does not match the installed app"
+        }
+    }
+
+    private fun getArchivePackageInfo(
+        packageManager: PackageManager,
+        apkFile: File
+    ): PackageInfo? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        packageManager.getPackageArchiveInfo(
+            apkFile.absolutePath,
+            PackageManager.PackageInfoFlags.of(
+                PackageManager.GET_SIGNING_CERTIFICATES.toLong()
+            )
+        )
+    } else {
+        @Suppress("DEPRECATION")
+        packageManager.getPackageArchiveInfo(
+            apkFile.absolutePath,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                PackageManager.GET_SIGNING_CERTIFICATES
+            } else {
+                PackageManager.GET_SIGNATURES
+            }
+        )
+    }
+
+    private fun getInstalledPackageInfo(
+        packageManager: PackageManager,
+        packageName: String
+    ): PackageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        packageManager.getPackageInfo(
+            packageName,
+            PackageManager.PackageInfoFlags.of(
+                PackageManager.GET_SIGNING_CERTIFICATES.toLong()
+            )
+        )
+    } else {
+        @Suppress("DEPRECATION")
+        packageManager.getPackageInfo(
+            packageName,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                PackageManager.GET_SIGNING_CERTIFICATES
+            } else {
+                PackageManager.GET_SIGNATURES
+            }
+        )
     }
 
     private val REDIRECT_STATUS_CODES = setOf(
@@ -367,3 +440,67 @@ object AppUpdateManager {
         308
     )
 }
+
+internal data class ApkSigningIdentity(
+    val currentSigners: Set<String>,
+    val signingHistory: Set<String>,
+    val hasMultipleSigners: Boolean
+)
+
+internal fun isUpdateVersionCodeAcceptable(
+    installedVersionCode: Long,
+    candidateVersionCode: Long
+): Boolean = installedVersionCode >= 0L && candidateVersionCode >= installedVersionCode
+
+/**
+ * Checks signer compatibility in the same direction as an update.
+ *
+ * A single-signer candidate may use the installed current signer, or a newer signer whose APK
+ * carries the installed signer in its proof-of-rotation history. A candidate signed only with an
+ * older certificate from the installed app's history is intentionally rejected. Multiple-signer
+ * packages cannot use certificate rotation and therefore require the exact current signer set.
+ */
+internal fun isSigningLineageCompatible(
+    installed: ApkSigningIdentity,
+    candidate: ApkSigningIdentity
+): Boolean {
+    if (installed.currentSigners.isEmpty() || candidate.currentSigners.isEmpty()) return false
+    if (installed.hasMultipleSigners || candidate.hasMultipleSigners) {
+        return installed.hasMultipleSigners == candidate.hasMultipleSigners &&
+            installed.currentSigners == candidate.currentSigners
+    }
+    val installedCurrent = installed.currentSigners.singleOrNull() ?: return false
+    val candidateCurrent = candidate.currentSigners.singleOrNull() ?: return false
+    return candidateCurrent == installedCurrent ||
+        installedCurrent in candidate.signingHistory
+}
+
+private fun PackageInfo.longVersionCodeCompat(): Long =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) longVersionCode else {
+        @Suppress("DEPRECATION")
+        versionCode.toLong()
+    }
+
+private fun PackageInfo.toSigningIdentity(): ApkSigningIdentity {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        val info = signingInfo ?: error("APK signing information is unavailable")
+        val hasMultipleSigners = info.hasMultipleSigners()
+        val current = info.apkContentsSigners.orEmpty().toCertificateDigests()
+        val history = if (hasMultipleSigners) {
+            current
+        } else {
+            info.signingCertificateHistory.orEmpty().toCertificateDigests() + current
+        }
+        return ApkSigningIdentity(current, history, hasMultipleSigners)
+    }
+    @Suppress("DEPRECATION")
+    val current = signatures.orEmpty().toCertificateDigests()
+    return ApkSigningIdentity(current, current, hasMultipleSigners = current.size > 1)
+}
+
+private fun Array<out Signature>.toCertificateDigests(): Set<String> =
+    mapTo(linkedSetOf()) { signature ->
+        MessageDigest.getInstance("SHA-256")
+            .digest(signature.toByteArray())
+            .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+    }

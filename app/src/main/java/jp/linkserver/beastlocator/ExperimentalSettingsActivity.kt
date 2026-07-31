@@ -21,12 +21,15 @@ class ExperimentalSettingsActivity : AppCompatActivity() {
     private lateinit var distanceIntervalSoundDistanceHelp: TextView
     private lateinit var distanceIntervalSoundDistanceLabel: TextView
     private lateinit var distanceIntervalSoundDistanceSeek: SeekBar
+    private lateinit var backgroundPermissionGuide: BackgroundLocationPermissionGuide
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_experimental_settings)
+        SystemBarInsetApplier.apply(findViewById(R.id.experimentalSettingsRoot))
 
         store = DestinationStore(this)
+        backgroundPermissionGuide = BackgroundLocationPermissionGuide(this, store)
         distanceIntervalSoundDistanceTitle = findViewById(R.id.distanceIntervalSoundDistanceTitle)
         distanceIntervalSoundDistanceHelp = findViewById(R.id.distanceIntervalSoundDistanceHelp)
         distanceIntervalSoundDistanceLabel = findViewById(R.id.distanceIntervalSoundDistanceLabel)
@@ -61,12 +64,14 @@ class ExperimentalSettingsActivity : AppCompatActivity() {
         arrivalSoundSwitch.setOnCheckedChangeListener { _, isChecked ->
             store.setArrivalSoundEnabled(isChecked)
             BackgroundLocationUpdater.updateRegistration(this)
+            if (isChecked) backgroundPermissionGuide.onBackgroundFeatureEnabled()
         }
 
         distance114514SoundSwitch.isChecked = store.isDistance114514SoundEnabled()
         distance114514SoundSwitch.setOnCheckedChangeListener { _, isChecked ->
             store.setDistance114514SoundEnabled(isChecked)
             BackgroundLocationUpdater.updateRegistration(this)
+            if (isChecked) backgroundPermissionGuide.onBackgroundFeatureEnabled()
         }
         distance114514LinkButton.setOnClickListener {
             openExternalLink("https://www.nicovideo.jp/watch/sm33266722")
@@ -78,6 +83,7 @@ class ExperimentalSettingsActivity : AppCompatActivity() {
             store.setDistanceIntervalSoundEnabled(isChecked)
             applyDistanceIntervalSoundUiEnabled(isChecked)
             BackgroundLocationUpdater.updateRegistration(this)
+            if (isChecked) backgroundPermissionGuide.onBackgroundFeatureEnabled()
         }
 
         compassSmoothingSwitch.isChecked = store.isCompassSmoothingEnabled()
@@ -101,6 +107,20 @@ class ExperimentalSettingsActivity : AppCompatActivity() {
         }
 
         findViewById<ImageButton>(R.id.experimentalSettingsBackButton).setOnClickListener { finish() }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::backgroundPermissionGuide.isInitialized) {
+            backgroundPermissionGuide.onHostResumed()
+        }
+    }
+
+    override fun onDestroy() {
+        if (::backgroundPermissionGuide.isInitialized) {
+            backgroundPermissionGuide.dismiss()
+        }
+        super.onDestroy()
     }
 
     private fun updateDistanceIntervalSoundLabel(distanceMeters: Int) {

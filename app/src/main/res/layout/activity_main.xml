@@ -12,13 +12,13 @@
         android:layout_width="48dp"
         android:layout_height="48dp"
         android:layout_margin="16dp"
-        android:background="@drawable/bg_icon_button"
+        android:background="@drawable/bg_foreground_monitor_toggle"
         android:contentDescription="@string/foreground_monitor_button_content_description_off"
         android:padding="10dp"
-        android:src="@drawable/ic_nav_arrow_widget"
+        android:src="@drawable/ic_navigation"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
-        app:tint="@color/expressive_on_surface_variant" />
+        app:tint="@color/expressive_on_surface" />
 
     <ImageButton
         android:id="@+id/settingsButton"

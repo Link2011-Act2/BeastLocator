@@ -41,6 +41,7 @@ class SettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
+        SystemBarInsetApplier.apply(findViewById(R.id.settingsRoot))
 
         store = DestinationStore(this)
         fixedDestinationValue = findViewById(R.id.fixedDestinationValue)
@@ -315,7 +316,7 @@ class SettingsActivity : AppCompatActivity() {
                 destinationText,
                 resolved = destinationText != coordinateText
             )
-            NotificationHelper.showDestinationReached(
+            NotificationHelper.updateDestinationReached(
                 this,
                 getString(R.string.notification_body, destinationText)
             )

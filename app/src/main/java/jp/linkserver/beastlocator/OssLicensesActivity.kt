@@ -20,6 +20,7 @@ class OssLicensesActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_oss_licenses)
+        SystemBarInsetApplier.apply(findViewById(R.id.ossRoot))
         container = findViewById(R.id.ossEntryContainer)
 
         findViewById<ImageButton>(R.id.ossBackButton).setOnClickListener { finish() }
