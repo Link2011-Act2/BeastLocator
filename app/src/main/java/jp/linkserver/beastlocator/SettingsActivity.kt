@@ -41,7 +41,11 @@ class SettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
-        SystemBarInsetApplier.apply(findViewById(R.id.settingsRoot))
+        // BottomNavigationView handles its own bottom inset so its background can reach the edge.
+        SystemBarInsetApplier.apply(
+            findViewById(R.id.settingsRoot),
+            applyBottomInset = false,
+        )
 
         store = DestinationStore(this)
         fixedDestinationValue = findViewById(R.id.fixedDestinationValue)

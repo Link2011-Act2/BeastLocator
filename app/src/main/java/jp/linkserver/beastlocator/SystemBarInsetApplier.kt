@@ -6,7 +6,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 
 object SystemBarInsetApplier {
-    fun apply(root: View) {
+    fun apply(root: View, applyBottomInset: Boolean = true) {
         val initialLeft = root.paddingLeft
         val initialTop = root.paddingTop
         val initialRight = root.paddingRight
@@ -17,7 +17,7 @@ object SystemBarInsetApplier {
                 left = initialLeft + systemBars.left,
                 top = initialTop + systemBars.top,
                 right = initialRight + systemBars.right,
-                bottom = initialBottom + systemBars.bottom,
+                bottom = initialBottom + if (applyBottomInset) systemBars.bottom else 0,
             )
             insets
         }

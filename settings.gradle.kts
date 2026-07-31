@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "RandomDirection"
+rootProject.name = "BeastLocator"
 include(":app")
