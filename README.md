@@ -41,16 +41,18 @@ Stableビルドでは隠し機能とする予定ですが、Beta では設定画
 
 ## 動作確認済みの機種
 
-手持ちの端末で、Android 16/15で動作することは確認しています<br>
-一応、Android 9 (API 28)以上であれば使用可能です
+手持ちの端末で、Android 16/15/14、8.0で動作することは確認しています<br>
+Android 8.0 (API 26)以上であれば使用可能です
 
 - Nothing Phone (3) Metroid-B4.0-260206-1135-JPN
 - Nothing Phone (2) Pong-B4.0-260226-0955
 - OPPO Find X9 Pro PLG110-16.0.5.701 (CN01B40P02)
+- AQUOS sense basic Android 8.0.0 S0041
 
 <br>
 
 - Nothing Phone (2) LineageOS 22.2-20260105-GAPPS-EXT4-GSI
+- Rakuten mini crDroid 10.1 UQ1A.240105.004
 
 ## スクリーンショット
 <img width="300" alt="Screenshot_20260324-014444" src="https://github.com/user-attachments/assets/149500da-c95a-4570-ad4e-a92b4ba7bfb4" />
