@@ -47,7 +47,7 @@
                 android:id="@+id/widgetTitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:fontFamily="@font/noto_sans_jp"
+                android:fontFamily="sans-serif"
                 android:textColor="@color/expressive_on_surface_variant"
                 android:textSize="12sp"
                 android:textStyle="bold"

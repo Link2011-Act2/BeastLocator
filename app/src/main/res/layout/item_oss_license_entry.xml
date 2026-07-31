@@ -11,7 +11,7 @@
         android:id="@+id/ossTitle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:fontFamily="@font/noto_sans_jp"
+        android:fontFamily="sans-serif"
         android:textColor="@color/expressive_on_surface"
         android:textSize="15sp"
         android:textStyle="bold" />
@@ -21,7 +21,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="2dp"
-        android:fontFamily="@font/noto_sans_jp"
+        android:fontFamily="sans-serif"
         android:textColor="@color/expressive_on_surface_variant"
         android:textSize="12sp" />
 

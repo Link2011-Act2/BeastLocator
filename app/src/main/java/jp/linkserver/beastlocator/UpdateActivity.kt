@@ -11,6 +11,9 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.net.toUri
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
 import io.noties.markwon.Markwon
 import io.noties.markwon.ext.tables.TablePlugin
 import java.io.File
@@ -33,6 +36,7 @@ class UpdateActivity : AppCompatActivity() {
             return
         }
         setContentView(R.layout.activity_update)
+        applySystemBarInsets()
         markwon = Markwon.builder(this)
             .usePlugin(TablePlugin.create(this))
             .build()
@@ -189,6 +193,25 @@ class UpdateActivity : AppCompatActivity() {
     private fun renderMarkdown(view: TextView, markdown: String) {
         view.movementMethod = LinkMovementMethod.getInstance()
         markwon.setMarkdown(view, markdown)
+    }
+
+    private fun applySystemBarInsets() {
+        val root = findViewById<View>(R.id.updateRoot)
+        val initialLeft = root.paddingLeft
+        val initialTop = root.paddingTop
+        val initialRight = root.paddingRight
+        val initialBottom = root.paddingBottom
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.updatePadding(
+                left = initialLeft + systemBars.left,
+                top = initialTop + systemBars.top,
+                right = initialRight + systemBars.right,
+                bottom = initialBottom + systemBars.bottom,
+            )
+            insets
+        }
+        ViewCompat.requestApplyInsets(root)
     }
 
     private fun channelLabel(channel: ReleaseChannel): String = when (channel) {

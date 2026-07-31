@@ -31,7 +31,7 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:fontFamily="@font/noto_sans_jp"
+                android:fontFamily="sans-serif"
                 android:text="@string/oss_screen_title"
                 android:textColor="@color/expressive_on_surface"
                 android:textSize="24sp"

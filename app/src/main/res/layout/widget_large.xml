@@ -46,7 +46,7 @@
         android:autoSizeTextType="uniform"
         android:ellipsize="end"
         android:layout_alignParentEnd="true"
-        android:fontFamily="@font/noto_sans_jp"
+        android:fontFamily="sans-serif"
         android:maxLines="1"
         android:textColor="@color/expressive_on_surface_variant"
         android:textSize="10sp"

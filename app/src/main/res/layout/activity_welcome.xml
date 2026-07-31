@@ -14,7 +14,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:fontFamily="@font/noto_sans_jp"
+            android:fontFamily="sans-serif"
             android:text="@string/welcome_title"
             android:textColor="@color/expressive_on_surface"
             android:textSize="28sp"
@@ -24,7 +24,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="14dp"
-            android:fontFamily="@font/noto_sans_jp"
+            android:fontFamily="sans-serif"
             android:text="@string/welcome_message"
             android:textColor="@color/expressive_on_surface_variant"
             android:textSize="15sp" />

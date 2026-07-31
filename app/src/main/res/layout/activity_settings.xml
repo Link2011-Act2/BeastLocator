@@ -37,7 +37,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:fontFamily="@font/noto_sans_jp"
+                    android:fontFamily="sans-serif"
                     android:text="@string/settings"
                     android:textColor="@color/expressive_on_surface"
                     android:textSize="26sp"
@@ -47,7 +47,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
-                    android:fontFamily="@font/noto_sans_jp"
+                    android:fontFamily="sans-serif"
                     android:text="@string/settings_subtitle"
                     android:textColor="@color/expressive_on_surface_variant"
                     android:textSize="13sp" />
@@ -63,7 +63,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:fontFamily="@font/noto_sans_jp"
+                        android:fontFamily="sans-serif"
                         android:text="@string/fixed_destination_title"
                         android:textColor="@color/expressive_on_surface"
                         android:textSize="16sp"
@@ -73,7 +73,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
-                        android:fontFamily="@font/noto_sans_jp"
+                        android:fontFamily="sans-serif"
                         android:text="@string/fixed_destination_help"
                         android:textColor="@color/expressive_on_surface_variant"
                         android:textSize="12sp" />
@@ -101,7 +101,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:fontFamily="@font/noto_sans_jp"
+                        android:fontFamily="sans-serif"
                         android:text="@string/radius_title"
                         android:textColor="@color/expressive_on_surface"
                         android:textSize="18sp"
@@ -111,7 +111,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
-                        android:fontFamily="@font/noto_sans_jp"
+                        android:fontFamily="sans-serif"
                         android:text="@string/radius_help"
                         android:textColor="@color/expressive_on_surface_variant"
                         android:textSize="12sp" />
@@ -148,7 +148,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:fontFamily="@font/noto_sans_jp"
+                        android:fontFamily="sans-serif"
                         android:text="@string/destination_action_title"
                         android:textColor="@color/expressive_on_surface"
                         android:textSize="16sp"
@@ -158,7 +158,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
-                        android:fontFamily="@font/noto_sans_jp"
+                        android:fontFamily="sans-serif"
                         android:text="@string/destination_action_help"
                         android:textColor="@color/expressive_on_surface_variant"
                         android:textSize="12sp" />
@@ -195,7 +195,7 @@
                                 android:id="@+id/landOnlyDestinationTitle"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:fontFamily="@font/noto_sans_jp"
+                                android:fontFamily="sans-serif"
                                 android:text="@string/land_only_destination_toggle"
                                 android:textColor="@color/expressive_on_surface"
                                 android:textSize="14sp" />
@@ -204,7 +204,7 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="1dp"
-                                android:fontFamily="@font/noto_sans_jp"
+                                android:fontFamily="sans-serif"
                                 android:text="@string/land_only_destination_help"
                                 android:textColor="@color/expressive_on_surface_variant"
                                 android:textSize="12sp" />
@@ -230,7 +230,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:fontFamily="@font/noto_sans_jp"
+                    android:fontFamily="sans-serif"
                     android:text="@string/compass_settings_title"
                     android:textColor="@color/expressive_on_surface"
                     android:textSize="16sp"
@@ -240,7 +240,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
-                    android:fontFamily="@font/noto_sans_jp"
+                    android:fontFamily="sans-serif"
                     android:text="@string/compass_settings_help"
                     android:textColor="@color/expressive_on_surface_variant"
                     android:textSize="12sp" />
@@ -263,7 +263,7 @@
                             android:id="@+id/compassLegacyModeToggleTitle"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:fontFamily="@font/noto_sans_jp"
+                            android:fontFamily="sans-serif"
                             android:text="@string/compass_legacy_mode_title"
                             android:textColor="@color/expressive_on_surface"
                             android:textSize="14sp" />
@@ -273,7 +273,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="1dp"
-                            android:fontFamily="@font/noto_sans_jp"
+                            android:fontFamily="sans-serif"
                             android:text="@string/compass_legacy_mode_summary"
                             android:textColor="@color/expressive_on_surface_variant"
                             android:textSize="12sp" />
@@ -299,7 +299,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:fontFamily="@font/noto_sans_jp"
+                    android:fontFamily="sans-serif"
                     android:text="@string/widget_settings_title"
                     android:textColor="@color/expressive_on_surface"
                     android:textSize="16sp"
@@ -309,7 +309,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
-                        android:fontFamily="@font/noto_sans_jp"
+                        android:fontFamily="sans-serif"
                         android:text="@string/widget_settings_help"
                         android:textColor="@color/expressive_on_surface_variant"
                         android:textSize="12sp" />
@@ -346,7 +346,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:fontFamily="@font/noto_sans_jp"
+                        android:fontFamily="sans-serif"
                         android:text="@string/privacy_guard_title"
                         android:textColor="@color/expressive_on_surface"
                         android:textSize="16sp"
@@ -356,7 +356,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
-                        android:fontFamily="@font/noto_sans_jp"
+                        android:fontFamily="sans-serif"
                         android:text="@string/privacy_guard_help"
                         android:textColor="@color/expressive_on_surface_variant"
                         android:textSize="12sp" />
@@ -379,7 +379,7 @@
                                 android:id="@+id/screenshotMaskToggleTitle"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:fontFamily="@font/noto_sans_jp"
+                                android:fontFamily="sans-serif"
                                 android:text="@string/screenshot_mask_toggle"
                                 android:textColor="@color/expressive_on_surface"
                                 android:textSize="14sp" />
@@ -389,7 +389,7 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="1dp"
-                                android:fontFamily="@font/noto_sans_jp"
+                                android:fontFamily="sans-serif"
                                 android:text="@string/screenshot_mask_toggle_help"
                                 android:textColor="@color/expressive_on_surface_variant"
                                 android:textSize="12sp" />
@@ -421,7 +421,7 @@
                                 android:id="@+id/screenshotWarningToggleTitle"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:fontFamily="@font/noto_sans_jp"
+                                android:fontFamily="sans-serif"
                                 android:text="@string/screenshot_warning_toggle"
                                 android:textColor="@color/expressive_on_surface"
                                 android:textSize="14sp" />
@@ -431,7 +431,7 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="1dp"
-                                android:fontFamily="@font/noto_sans_jp"
+                                android:fontFamily="sans-serif"
                                 android:text="@string/screenshot_warning_toggle_help"
                                 android:textColor="@color/expressive_on_surface_variant"
                                 android:textSize="12sp" />
@@ -457,7 +457,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:fontFamily="@font/noto_sans_jp"
+                        android:fontFamily="sans-serif"
                         android:text="@string/background_location_section_title"
                         android:textColor="@color/expressive_on_surface"
                         android:textSize="16sp"
@@ -467,7 +467,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
-                        android:fontFamily="@font/noto_sans_jp"
+                        android:fontFamily="sans-serif"
                         android:text="@string/background_location_section_help"
                         android:textColor="@color/expressive_on_surface_variant"
                         android:textSize="12sp" />
@@ -490,7 +490,7 @@
                                 android:id="@+id/backgroundLocationUpdateToggleTitle"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:fontFamily="@font/noto_sans_jp"
+                                android:fontFamily="sans-serif"
                                 android:text="@string/background_location_update_toggle"
                                 android:textColor="@color/expressive_on_surface"
                                 android:textSize="14sp" />
@@ -500,7 +500,7 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="1dp"
-                                android:fontFamily="@font/noto_sans_jp"
+                                android:fontFamily="sans-serif"
                                 android:text="@string/background_location_update_help"
                                 android:textColor="@color/expressive_on_surface_variant"
                                 android:textSize="12sp" />
@@ -526,7 +526,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:fontFamily="@font/noto_sans_jp"
+                        android:fontFamily="sans-serif"
                         android:text="@string/notification_title_group"
                         android:textColor="@color/expressive_on_surface"
                         android:textSize="16sp"
@@ -536,7 +536,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
-                        android:fontFamily="@font/noto_sans_jp"
+                        android:fontFamily="sans-serif"
                         android:text="@string/notification_help"
                         android:textColor="@color/expressive_on_surface_variant"
                         android:textSize="12sp" />
@@ -559,7 +559,7 @@
                                 android:id="@+id/arrivalNotificationToggleTitle"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:fontFamily="@font/noto_sans_jp"
+                                android:fontFamily="sans-serif"
                                 android:text="@string/arrival_notification_toggle"
                                 android:textColor="@color/expressive_on_surface"
                                 android:textSize="14sp" />
@@ -568,7 +568,7 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="1dp"
-                                android:fontFamily="@font/noto_sans_jp"
+                                android:fontFamily="sans-serif"
                                 android:text="@string/arrival_notification_toggle_help"
                                 android:textColor="@color/expressive_on_surface_variant"
                                 android:textSize="12sp" />
@@ -600,7 +600,7 @@
                                 android:id="@+id/liveUpdateToggleTitle"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:fontFamily="@font/noto_sans_jp"
+                                android:fontFamily="sans-serif"
                                 android:text="@string/live_update_toggle"
                                 android:textColor="@color/expressive_on_surface"
                                 android:textSize="14sp" />
@@ -609,7 +609,7 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="1dp"
-                                android:fontFamily="@font/noto_sans_jp"
+                                android:fontFamily="sans-serif"
                                 android:text="@string/live_update_toggle_help"
                                 android:textColor="@color/expressive_on_surface_variant"
                                 android:textSize="12sp" />
@@ -628,7 +628,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="6dp"
-                        android:fontFamily="@font/noto_sans_jp"
+                        android:fontFamily="sans-serif"
                         android:text="@string/live_update_start_distance_title"
                         android:textColor="@color/expressive_primary"
                         android:textSize="13sp" />
@@ -638,7 +638,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
-                        android:fontFamily="@font/noto_sans_jp"
+                        android:fontFamily="sans-serif"
                         android:text="@string/live_update_start_distance_help"
                         android:textColor="@color/expressive_on_surface_variant"
                         android:textSize="12sp" />
@@ -675,7 +675,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:fontFamily="@font/noto_sans_jp"
+                        android:fontFamily="sans-serif"
                         android:text="@string/debug_section_title"
                         android:textColor="@color/expressive_on_surface"
                         android:textSize="16sp"
@@ -685,7 +685,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
-                        android:fontFamily="@font/noto_sans_jp"
+                        android:fontFamily="sans-serif"
                         android:text="@string/debug_revision_title"
                         android:textColor="@color/expressive_primary"
                         android:textSize="13sp" />
@@ -711,7 +711,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:fontFamily="@font/noto_sans_jp"
+                            android:fontFamily="sans-serif"
                             android:text="@string/debug_update_testing_title"
                             android:textColor="@color/expressive_primary"
                             android:textSize="13sp" />
@@ -728,7 +728,7 @@
                         <TextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:fontFamily="@font/noto_sans_jp"
+                            android:fontFamily="sans-serif"
                             android:text="@string/debug_update_show_latest_help"
                             android:textColor="@color/expressive_on_surface_variant"
                             android:textSize="12sp" />
@@ -737,7 +737,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="10dp"
-                            android:fontFamily="@font/noto_sans_jp"
+                            android:fontFamily="sans-serif"
                             android:labelFor="@id/debugUpdateCurrentVersionEdit"
                             android:text="@string/debug_update_current_version_title"
                             android:textColor="@color/expressive_on_surface"
@@ -757,7 +757,7 @@
                             android:id="@+id/debugUpdateCurrentVersionHelp"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:fontFamily="@font/noto_sans_jp"
+                            android:fontFamily="sans-serif"
                             android:textColor="@color/expressive_on_surface_variant"
                             android:textSize="12sp" />
                     </LinearLayout>
@@ -766,7 +766,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
-                        android:fontFamily="@font/noto_sans_jp"
+                        android:fontFamily="sans-serif"
                         android:text="@string/debug_destination_override_title"
                         android:textColor="@color/expressive_primary"
                         android:textSize="13sp" />
@@ -846,7 +846,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:fontFamily="@font/noto_sans_jp"
+                            android:fontFamily="sans-serif"
                             android:text="@string/experimental_settings_title"
                             android:textColor="@color/expressive_on_surface"
                             android:textSize="16sp"
@@ -856,7 +856,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="4dp"
-                            android:fontFamily="@font/noto_sans_jp"
+                            android:fontFamily="sans-serif"
                             android:text="@string/experimental_settings_help"
                             android:textColor="@color/expressive_on_surface_variant"
                             android:textSize="12sp" />
@@ -895,7 +895,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:fontFamily="@font/noto_sans_jp"
+                            android:fontFamily="sans-serif"
                             android:text="@string/about_section_title"
                             android:textColor="@color/expressive_on_surface"
                             android:textSize="16sp"
@@ -905,7 +905,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="4dp"
-                            android:fontFamily="@font/noto_sans_jp"
+                            android:fontFamily="sans-serif"
                             android:text="@string/about_section_help"
                             android:textColor="@color/expressive_on_surface_variant"
                             android:textSize="12sp" />

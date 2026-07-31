@@ -127,7 +127,7 @@
     <string name="about_support_title">支持信息</string>
     <string name="about_support_help">提交问题报告或查看联系方式</string>
     <string name="about_support_open_site">跳转至官方网站</string>
-    <string name="about_support_open_twitter">跳转至X (Twitter)</string>
+    <string name="about_support_open_twitter">跳转至Twitter</string>
     <string name="about_support_site_url">https://linkserver.jp/</string>
     <string name="about_support_twitter_url">https://x.com/Link_2011A</string>
     <string name="about_update_title">更新信息</string>
@@ -140,6 +140,9 @@
     <string name="update_available">新版本 %1$s 可用</string>
     <string name="update_available_title">有可用更新</string>
     <string name="update_available_message">新版本 %1$s 可用。您可以查看发布信息、从 GitHub Releases 下载 APK 并进行安装。\n\n%2$s</string>
+    <string name="update_banner_title">有可用更新</string>
+    <string name="update_banner_body">%1$s 可用。点击查看详情。</string>
+    <string name="update_banner_dismiss">关闭更新通知</string>
     <string name="update_show_details_button">查看更新</string>
     <string name="update_dismiss_version_button">不再提示此版本</string>
     <string name="update_screen_title">应用更新</string>

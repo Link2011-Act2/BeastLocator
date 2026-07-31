@@ -31,7 +31,7 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:fontFamily="@font/noto_sans_jp"
+                android:fontFamily="sans-serif"
                 android:text="@string/experimental_settings_screen_title"
                 android:textColor="@color/expressive_on_surface"
                 android:textSize="24sp"
@@ -41,7 +41,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
-                android:fontFamily="@font/noto_sans_jp"
+                android:fontFamily="sans-serif"
                 android:text="@string/experimental_settings_screen_help"
                 android:textColor="@color/expressive_on_surface_variant"
                 android:textSize="13sp" />
@@ -57,7 +57,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:fontFamily="@font/noto_sans_jp"
+                    android:fontFamily="sans-serif"
                     android:text="@string/experimental_language_title"
                     android:textColor="@color/expressive_on_surface"
                     android:textSize="16sp"
@@ -67,7 +67,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
-                    android:fontFamily="@font/noto_sans_jp"
+                    android:fontFamily="sans-serif"
                     android:text="@string/experimental_language_help"
                     android:textColor="@color/expressive_on_surface_variant"
                     android:textSize="12sp" />
@@ -89,7 +89,7 @@
                         <TextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:fontFamily="@font/noto_sans_jp"
+                            android:fontFamily="sans-serif"
                             android:text="@string/experimental_language_toggle"
                             android:textColor="@color/expressive_on_surface"
                             android:textSize="14sp" />
@@ -98,7 +98,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="1dp"
-                            android:fontFamily="@font/noto_sans_jp"
+                            android:fontFamily="sans-serif"
                             android:text="@string/experimental_language_toggle_help"
                             android:textColor="@color/expressive_on_surface_variant"
                             android:textSize="12sp" />
@@ -131,7 +131,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:fontFamily="@font/noto_sans_jp"
+                    android:fontFamily="sans-serif"
                     android:text="@string/experimental_compass_title"
                     android:textColor="@color/expressive_on_surface"
                     android:textSize="16sp"
@@ -141,7 +141,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
-                    android:fontFamily="@font/noto_sans_jp"
+                    android:fontFamily="sans-serif"
                     android:text="@string/experimental_compass_help"
                     android:textColor="@color/expressive_on_surface_variant"
                     android:textSize="12sp" />
@@ -163,7 +163,7 @@
                         <TextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:fontFamily="@font/noto_sans_jp"
+                            android:fontFamily="sans-serif"
                             android:text="@string/experimental_compass_smoothing_toggle"
                             android:textColor="@color/expressive_on_surface"
                             android:textSize="14sp" />
@@ -172,7 +172,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="1dp"
-                            android:fontFamily="@font/noto_sans_jp"
+                            android:fontFamily="sans-serif"
                             android:text="@string/experimental_compass_smoothing_toggle_help"
                             android:textColor="@color/expressive_on_surface_variant"
                             android:textSize="12sp" />
@@ -198,7 +198,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:fontFamily="@font/noto_sans_jp"
+                    android:fontFamily="sans-serif"
                     android:text="@string/sound_settings_title"
                     android:textColor="@color/expressive_on_surface"
                     android:textSize="16sp"
@@ -208,7 +208,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
-                    android:fontFamily="@font/noto_sans_jp"
+                    android:fontFamily="sans-serif"
                     android:text="@string/sound_settings_help"
                     android:textColor="@color/expressive_on_surface_variant"
                     android:textSize="12sp" />
@@ -230,7 +230,7 @@
                         <TextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:fontFamily="@font/noto_sans_jp"
+                            android:fontFamily="sans-serif"
                             android:text="@string/arrival_sound_toggle"
                             android:textColor="@color/expressive_on_surface"
                             android:textSize="14sp" />
@@ -239,7 +239,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="1dp"
-                            android:fontFamily="@font/noto_sans_jp"
+                            android:fontFamily="sans-serif"
                             android:text="@string/arrival_sound_toggle_help"
                             android:textColor="@color/expressive_on_surface_variant"
                             android:textSize="12sp" />
@@ -271,7 +271,7 @@
                             android:id="@+id/distance114514SoundToggleTitle"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:fontFamily="@font/noto_sans_jp"
+                            android:fontFamily="sans-serif"
                             android:text="@string/distance_114514_sound_toggle"
                             android:textColor="@color/expressive_on_surface"
                             android:textSize="14sp" />
@@ -280,7 +280,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="1dp"
-                            android:fontFamily="@font/noto_sans_jp"
+                            android:fontFamily="sans-serif"
                             android:text="@string/distance_114514_sound_toggle_help"
                             android:textColor="@color/expressive_on_surface_variant"
                             android:textSize="12sp" />
@@ -319,7 +319,7 @@
                             android:id="@+id/distanceIntervalSoundToggleTitle"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:fontFamily="@font/noto_sans_jp"
+                            android:fontFamily="sans-serif"
                             android:text="@string/distance_interval_sound_toggle"
                             android:textColor="@color/expressive_on_surface"
                             android:textSize="14sp" />
@@ -328,7 +328,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="1dp"
-                            android:fontFamily="@font/noto_sans_jp"
+                            android:fontFamily="sans-serif"
                             android:text="@string/distance_interval_sound_toggle_help"
                             android:textColor="@color/expressive_on_surface_variant"
                             android:textSize="12sp" />
@@ -347,7 +347,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="6dp"
-                    android:fontFamily="@font/noto_sans_jp"
+                    android:fontFamily="sans-serif"
                     android:text="@string/distance_interval_sound_distance_title"
                     android:textColor="@color/expressive_primary"
                     android:textSize="13sp" />
@@ -357,7 +357,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
-                    android:fontFamily="@font/noto_sans_jp"
+                    android:fontFamily="sans-serif"
                     android:text="@string/distance_interval_sound_distance_help"
                     android:textColor="@color/expressive_on_surface_variant"
                     android:textSize="12sp" />

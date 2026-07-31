@@ -60,7 +60,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
-            android:fontFamily="@font/noto_sans_jp"
+            android:fontFamily="sans-serif"
             android:text="@string/waiting_location"
             android:textColor="@color/expressive_on_surface"
             android:textLocale="ja-JP"
@@ -72,7 +72,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
-            android:fontFamily="@font/noto_sans_jp"
+            android:fontFamily="sans-serif"
             android:text="@string/direction_placeholder"
             android:textColor="@color/expressive_on_surface_variant"
             android:textLocale="ja-JP"
@@ -97,7 +97,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
-            android:fontFamily="@font/noto_sans_jp"
+            android:fontFamily="sans-serif"
             android:gravity="center_horizontal"
             android:text="@string/arrival_title"
             android:textAlignment="center"
@@ -111,7 +111,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="14dp"
-            android:fontFamily="@font/noto_sans_jp"
+            android:fontFamily="sans-serif"
             android:gravity="start"
             android:text="@string/arrival_name_placeholder"
             android:textAlignment="viewStart"
@@ -142,5 +142,74 @@
             android:text="@string/create_next_destination" />
 
     </LinearLayout>
+
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/updateBannerCard"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginTop="12dp"
+        android:layout_marginEnd="16dp"
+        android:clickable="true"
+        android:elevation="10dp"
+        android:focusable="true"
+        android:visibility="gone"
+        app:cardBackgroundColor="@color/expressive_primary_container"
+        app:cardCornerRadius="20dp"
+        app:cardElevation="10dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:strokeWidth="0dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="18dp"
+            android:paddingTop="14dp"
+            android:paddingEnd="10dp"
+            android:paddingBottom="14dp">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="sans-serif"
+                    android:text="@string/update_banner_title"
+                    android:textColor="@color/expressive_on_primary_container"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/updateBannerBody"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:ellipsize="end"
+                    android:fontFamily="sans-serif"
+                    android:maxLines="2"
+                    android:textColor="@color/expressive_on_primary_container"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <ImageButton
+                android:id="@+id/updateBannerDismissButton"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginStart="12dp"
+                android:background="@drawable/bg_update_banner_close"
+                android:contentDescription="@string/update_banner_dismiss"
+                android:padding="8dp"
+                android:src="@drawable/ic_close"
+                app:tint="@color/expressive_on_primary_container" />
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
 </androidx.constraintlayout.widget.ConstraintLayout>
 

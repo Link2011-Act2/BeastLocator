@@ -127,7 +127,7 @@
     <string name="about_support_title">Support Info</string>
     <string name="about_support_help">Report bugs or contact us here</string>
     <string name="about_support_open_site">Open Website</string>
-    <string name="about_support_open_twitter">Open X (Twitter)</string>
+    <string name="about_support_open_twitter">Open Twitter</string>
     <string name="about_support_site_url">https://linkserver.jp/</string>
     <string name="about_support_twitter_url">https://x.com/Link_2011A</string>
     <string name="about_update_title">Update Info</string>
@@ -140,6 +140,9 @@
     <string name="update_available">Version %1$s is available</string>
     <string name="update_available_title">Update available</string>
     <string name="update_available_message">Version %1$s is available. You can review the release, download the APK from GitHub Releases, and install it.\n\n%2$s</string>
+    <string name="update_banner_title">Update available</string>
+    <string name="update_banner_body">%1$s is available. Tap to view details.</string>
+    <string name="update_banner_dismiss">Dismiss update notification</string>
     <string name="update_show_details_button">View update</string>
     <string name="update_dismiss_version_button">Don\'t notify for this version</string>
     <string name="update_screen_title">App Update</string>

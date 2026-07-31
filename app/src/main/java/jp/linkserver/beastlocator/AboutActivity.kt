@@ -24,10 +24,19 @@ class AboutActivity : AppCompatActivity() {
         val (simpleVersion, _) = splitVersionAndChannel(versionName)
         val channel = ReleaseChannelDetector.detect(versionName)
         val channelLabel = resolveChannelLabel(channel)
+        val summaryChannelLabel =
+            if (channel == ReleaseChannel.INTDEV) channel.canonicalName else channelLabel
+        val summaryVersionName =
+            if (channel == ReleaseChannel.INTDEV) simpleVersion else versionName
         findViewById<TextView>(R.id.aboutVersionText).text =
-            getString(R.string.about_version_label, channelLabel, versionName, versionCode)
+            getString(
+                R.string.about_version_label,
+                summaryChannelLabel,
+                summaryVersionName,
+                versionCode,
+            )
         findViewById<TextView>(R.id.aboutDevChannelText).text =
-            channelLabel
+            channel.canonicalName
         findViewById<TextView>(R.id.aboutSimpleVersionText).text =
             getString(R.string.about_simple_version_value, simpleVersion)
         findViewById<TextView>(R.id.aboutUpdateVersionText).text =

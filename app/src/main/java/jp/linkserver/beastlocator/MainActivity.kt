@@ -121,7 +121,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var updateCheckOperation: AppUpdateManager.Operation? = null
     private var pendingUpdateInfo: AppUpdateInfo? = null
     private var hasStartedAutomaticUpdateCheck = false
-    private var isUpdateDialogShowing = false
+    private lateinit var updateBannerCard: View
+    private lateinit var updateBannerBody: TextView
+    private var displayedUpdateTag: String? = null
     private var skipPermissionGuideOnce = false
     private var isScreenCaptureCallbackRegistered = false
     private var screenCaptureCallbackRef: Any? = null
@@ -182,6 +184,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         arrivalContent = findViewById(R.id.arrivalContent)
         arrivalNameView = findViewById(R.id.arrivalNameText)
         arrivalCoordsView = findViewById(R.id.arrivalCoordsText)
+        updateBannerCard = findViewById(R.id.updateBannerCard)
+        updateBannerBody = findViewById(R.id.updateBannerBody)
+        updateBannerCard.setOnClickListener { openPendingUpdateDetails() }
+        findViewById<ImageButton>(R.id.updateBannerDismissButton).setOnClickListener {
+            dismissPendingUpdateNotification()
+        }
         arrowView.clearColorFilter()
         findViewById<Button>(R.id.createNextDestinationButton).setOnClickListener {
             resetDestinationProgress()
@@ -229,7 +237,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     override fun onPostResume() {
         super.onPostResume()
-        maybeShowUpdateDialog()
+        maybeShowUpdateBanner()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) maybeShowUpdateBanner()
     }
 
     override fun onPause() {
@@ -251,6 +264,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         arrivalNameRequest?.cancel()
         arrivalNameRequest = null
         backgroundPermissionGuideDialog?.dismiss()
+        if (::updateBannerCard.isInitialized) updateBannerCard.animate().cancel()
         updateCheckOperation?.cancel()
         updateCheckOperation = null
         super.onDestroy()
@@ -305,7 +319,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                         !AppUpdateManager.isUpdateNotificationDismissed(this, updateInfo.tagName)
                     ) {
                         pendingUpdateInfo = updateInfo
-                        maybeShowUpdateDialog()
+                        maybeShowUpdateBanner()
                     }
                 }.onFailure {
                     AppDiagnostics.warn("automatic_update_check_failed", error = it)
@@ -316,39 +330,80 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }.getOrNull()
     }
 
-    private fun maybeShowUpdateDialog() {
+    private fun maybeShowUpdateBanner() {
         val updateInfo = pendingUpdateInfo ?: return
-        if (isUpdateDialogShowing || isFinishing || isDestroyed || !hasWindowFocus()) return
-        isUpdateDialogShowing = true
-        val notesPreview = updateInfo.releaseNotes
-            .lineSequence()
-            .filter { it.isNotBlank() }
-            .take(4)
-            .joinToString("\n")
-            .ifBlank { getString(R.string.update_release_notes_empty) }
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.update_available_title)
-            .setMessage(
-                getString(
-                    R.string.update_available_message,
-                    updateInfo.tagName,
-                    notesPreview
-                )
-            )
-            .setPositiveButton(R.string.update_show_details_button) { _, _ ->
-                pendingUpdateInfo = null
+        if (isFinishing || isDestroyed || !hasWindowFocus()) return
+        if (displayedUpdateTag == updateInfo.tagName &&
+            updateBannerCard.visibility == View.VISIBLE
+        ) {
+            return
+        }
+
+        displayedUpdateTag = updateInfo.tagName
+        updateBannerBody.text = getString(R.string.update_banner_body, updateInfo.tagName)
+        updateBannerCard.animate().cancel()
+        updateBannerCard.alpha = 0f
+        updateBannerCard.visibility = View.VISIBLE
+        updateBannerCard.post {
+            if (pendingUpdateInfo?.tagName != updateInfo.tagName ||
+                isFinishing || isDestroyed || !hasWindowFocus()
+            ) {
+                updateBannerCard.visibility = View.GONE
+                displayedUpdateTag = null
+                return@post
+            }
+            updateBannerCard.translationY =
+                -(updateBannerCard.height + dpToPixels(16)).toFloat()
+            updateBannerCard.animate()
+                .translationY(0f)
+                .alpha(1f)
+                .setDuration(220L)
+                .start()
+        }
+    }
+
+    private fun openPendingUpdateDetails() {
+        val updateInfo = pendingUpdateInfo ?: return
+        pendingUpdateInfo = null
+        hideUpdateBanner {
+            if (!isFinishing && !isDestroyed) {
                 startActivity(UpdateActivity.createIntent(this, updateInfo))
             }
-            .setNegativeButton(R.string.update_dismiss_version_button) { _, _ ->
-                AppUpdateManager.dismissUpdateNotificationUntilNextVersion(
-                    this,
-                    updateInfo.tagName
-                )
-                pendingUpdateInfo = null
-            }
-            .setOnDismissListener { isUpdateDialogShowing = false }
-            .show()
+        }
     }
+
+    private fun dismissPendingUpdateNotification() {
+        val updateInfo = pendingUpdateInfo ?: return
+        AppUpdateManager.dismissUpdateNotificationUntilNextVersion(this, updateInfo.tagName)
+        pendingUpdateInfo = null
+        hideUpdateBanner()
+    }
+
+    private fun hideUpdateBanner(onHidden: (() -> Unit)? = null) {
+        if (!::updateBannerCard.isInitialized ||
+            updateBannerCard.visibility != View.VISIBLE
+        ) {
+            displayedUpdateTag = null
+            onHidden?.invoke()
+            return
+        }
+        updateBannerCard.animate().cancel()
+        updateBannerCard.animate()
+            .translationY(-(updateBannerCard.height + dpToPixels(16)).toFloat())
+            .alpha(0f)
+            .setDuration(180L)
+            .withEndAction {
+                updateBannerCard.visibility = View.GONE
+                updateBannerCard.translationY = 0f
+                updateBannerCard.alpha = 1f
+                displayedUpdateTag = null
+                onHidden?.invoke()
+            }
+            .start()
+    }
+
+    private fun dpToPixels(dp: Int): Int =
+        (dp * resources.displayMetrics.density).toInt()
 
     private fun maybeLaunchWelcomeScreen(): Boolean {
         if (store.isWelcomeCompleted()) return false

@@ -127,7 +127,7 @@
     <string name="about_support_title">サポート情報</string>
     <string name="about_support_help">不具合報告や連絡先はこちら</string>
     <string name="about_support_open_site">サイトを開く</string>
-    <string name="about_support_open_twitter">X (Twitter) を開く</string>
+    <string name="about_support_open_twitter">Twitter を開く</string>
     <string name="about_support_site_url" translatable="false">https://linkserver.jp/</string>
     <string name="about_support_twitter_url" translatable="false">https://x.com/Link_2011A</string>
     <string name="about_update_title">更新情報</string>
@@ -140,6 +140,9 @@
     <string name="update_available">新しいバージョン %1$s を利用できます</string>
     <string name="update_available_title">アップデートがあります</string>
     <string name="update_available_message">%1$s を利用できます。GitHub Releasesから更新内容の確認、APKのダウンロード、インストールができます。\n\n%2$s</string>
+    <string name="update_banner_title">アップデートがあります</string>
+    <string name="update_banner_body">%1$s が利用できます。タップして詳細を開きます。</string>
+    <string name="update_banner_dismiss">更新通知を閉じる</string>
     <string name="update_show_details_button">更新内容を見る</string>
     <string name="update_dismiss_version_button">この版は通知しない</string>
     <string name="update_screen_title">アプリのアップデート</string>

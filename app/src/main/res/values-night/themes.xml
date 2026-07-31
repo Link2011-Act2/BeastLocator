@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
     <style name="Theme.RandomDirection" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="fontFamily">@font/noto_sans_jp</item>
-        <item name="android:fontFamily">@font/noto_sans_jp</item>
+        <item name="fontFamily">sans-serif</item>
+        <item name="android:fontFamily">sans-serif</item>
         <item name="colorPrimary">@color/expressive_primary</item>
         <item name="colorOnPrimary">@color/expressive_on_primary</item>
         <item name="colorPrimaryContainer">@color/expressive_primary_container</item>

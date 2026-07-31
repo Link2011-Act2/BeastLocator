@@ -31,7 +31,7 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:fontFamily="@font/noto_sans_jp"
+                android:fontFamily="sans-serif"
                 android:text="@string/about_screen_title"
                 android:textColor="@color/expressive_on_surface"
                 android:textSize="26sp"
@@ -68,7 +68,7 @@
                         <TextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:fontFamily="@font/noto_sans_jp"
+                            android:fontFamily="sans-serif"
                             android:text="@string/app_name"
                             android:textColor="@color/expressive_on_surface"
                             android:textSize="22sp"
@@ -114,7 +114,7 @@
                         <TextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:fontFamily="@font/noto_sans_jp"
+                            android:fontFamily="sans-serif"
                             android:gravity="start"
                             android:text="@string/about_dev_channel_title"
                             android:textColor="@color/expressive_on_surface_variant"
@@ -157,7 +157,7 @@
                         <TextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:fontFamily="@font/noto_sans_jp"
+                            android:fontFamily="sans-serif"
                             android:gravity="start"
                             android:text="@string/about_simple_version_title"
                             android:textColor="@color/expressive_on_surface_variant"
@@ -188,7 +188,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:fontFamily="@font/noto_sans_jp"
+                    android:fontFamily="sans-serif"
                     android:text="@string/about_support_title"
                     android:textColor="@color/expressive_on_surface"
                     android:textSize="16sp"
@@ -198,7 +198,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
-                    android:fontFamily="@font/noto_sans_jp"
+                    android:fontFamily="sans-serif"
                     android:text="@string/about_support_help"
                     android:textColor="@color/expressive_on_surface_variant"
                     android:textSize="12sp" />
@@ -238,7 +238,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:fontFamily="@font/noto_sans_jp"
+                    android:fontFamily="sans-serif"
                     android:text="@string/about_update_title"
                     android:textColor="@color/expressive_on_surface"
                     android:textSize="16sp"
@@ -258,7 +258,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="6dp"
-                    android:fontFamily="@font/noto_sans_jp"
+                    android:fontFamily="sans-serif"
                     android:lineSpacingExtra="2dp"
                     android:text="@string/about_update_notes"
                     android:textColor="@color/expressive_on_surface_variant"
@@ -294,7 +294,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:fontFamily="@font/noto_sans_jp"
+                        android:fontFamily="sans-serif"
                         android:text="@string/about_oss_title"
                         android:textColor="@color/expressive_on_surface"
                         android:textSize="16sp"
@@ -304,7 +304,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
-                        android:fontFamily="@font/noto_sans_jp"
+                        android:fontFamily="sans-serif"
                         android:text="@string/about_oss_help"
                         android:textColor="@color/expressive_on_surface_variant"
                         android:textSize="12sp" />
