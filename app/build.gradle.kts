@@ -467,7 +467,7 @@ android {
         applicationId = "jp.linkserver.beastlocator"
         minSdk = 26
         targetSdk = 36
-        versionCode = 202608091   // 2026, 08, 09, 1(年、月、日、その日のうちの何個目)
+        versionCode = 202608092   // 2026, 08, 09, 1(年、月、日、その日のうちの何個目)
         versionName = appVersionName
         buildConfigField("String", "BUILD_NUMBER", "\"$generatedBuildNumber\"")
     }
