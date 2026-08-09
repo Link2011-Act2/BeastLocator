@@ -114,7 +114,8 @@ class ForegroundDistanceMonitorService : Service() {
     private fun processContinuousLocation(location: Location): Float? {
         val sample = LocationSampleFactory.fromAndroidLocation(
             location,
-            LocationSampleSource.CONTINUOUS
+            LocationSampleSource.CONTINUOUS,
+            allowMockForDevelopment = store.isMockLocationAllowedForTesting()
         ) ?: return null
         if (!locationSampleGate.accept(sample)) {
             AppDiagnostics.info(

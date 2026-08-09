@@ -640,7 +640,11 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         ) {
             return
         }
-        val sample = LocationSampleFactory.fromAndroidLocation(location, source) ?: return
+        val sample = LocationSampleFactory.fromAndroidLocation(
+            location,
+            source,
+            allowMockForDevelopment = store.isMockLocationAllowedForTesting()
+        ) ?: return
         if (!locationSampleGate.accept(sample)) {
             AppDiagnostics.info(
                 "foreground_location_sample_rejected",

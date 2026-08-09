@@ -23,6 +23,12 @@ class UpdateActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private lateinit var markwon: Markwon
     private lateinit var downloadViewModel: UpdateDownloadViewModel
+    private lateinit var intermediateNotesToggle: View
+    private lateinit var intermediateNotesToggleText: TextView
+    private lateinit var intermediateNotesText: TextView
+    private lateinit var intermediateNotesChevron: View
+    private var intermediateNotesExpanded = false
+    private var intermediateNotesSummary = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -44,11 +50,7 @@ class UpdateActivity : AppCompatActivity() {
             findViewById(R.id.updateReleaseNotesText),
             updateInfo.releaseNotes.ifBlank { getString(R.string.update_release_notes_empty) }
         )
-        findViewById<TextView>(R.id.updateIntermediateNotesText).apply {
-            val notes = intent.getStringExtra(EXTRA_INTERMEDIATE_NOTES).orEmpty()
-            visibility = if (notes.isBlank()) View.GONE else View.VISIBLE
-            if (notes.isNotBlank()) renderMarkdown(this, notes)
-        }
+        setupIntermediateNotes(savedInstanceState)
         findViewById<TextView>(R.id.updateAssetText).text = updateInfo.apkAssetName?.let {
             getString(R.string.update_asset_name, it)
         } ?: getString(R.string.update_apk_not_found)
@@ -72,6 +74,11 @@ class UpdateActivity : AppCompatActivity() {
             openReleasePage()
         }
         downloadViewModel.state.observe(this, ::renderDownloadState)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(STATE_INTERMEDIATE_NOTES_EXPANDED, intermediateNotesExpanded)
     }
 
     override fun onResume() {
@@ -187,6 +194,49 @@ class UpdateActivity : AppCompatActivity() {
         markwon.setMarkdown(view, markdown)
     }
 
+    private fun setupIntermediateNotes(savedInstanceState: Bundle?) {
+        val section = findViewById<View>(R.id.updateIntermediateNotesSection)
+        val notes = intent.getStringExtra(EXTRA_INTERMEDIATE_NOTES).orEmpty()
+        val skippedVersionCount = intent.getIntExtra(EXTRA_INTERMEDIATE_COUNT, 0)
+        if (notes.isBlank() || skippedVersionCount <= 0) {
+            section.visibility = View.GONE
+            return
+        }
+
+        section.visibility = View.VISIBLE
+        intermediateNotesToggle = findViewById(R.id.updateIntermediateNotesToggle)
+        intermediateNotesToggleText = findViewById(R.id.updateIntermediateNotesToggleText)
+        intermediateNotesText = findViewById(R.id.updateIntermediateNotesText)
+        intermediateNotesChevron = findViewById(R.id.updateIntermediateNotesChevron)
+        intermediateNotesSummary = resources.getQuantityString(
+            R.plurals.update_skipped_versions_count,
+            skippedVersionCount,
+            skippedVersionCount
+        )
+        intermediateNotesToggleText.text = intermediateNotesSummary
+        renderMarkdown(intermediateNotesText, notes)
+        setIntermediateNotesExpanded(
+            savedInstanceState?.getBoolean(STATE_INTERMEDIATE_NOTES_EXPANDED) == true
+        )
+        intermediateNotesToggle.setOnClickListener {
+            setIntermediateNotesExpanded(!intermediateNotesExpanded)
+        }
+    }
+
+    private fun setIntermediateNotesExpanded(expanded: Boolean) {
+        intermediateNotesExpanded = expanded
+        intermediateNotesText.visibility = if (expanded) View.VISIBLE else View.GONE
+        intermediateNotesChevron.rotation = if (expanded) 180f else 0f
+        intermediateNotesToggle.contentDescription = getString(
+            if (expanded) {
+                R.string.update_skipped_versions_collapse
+            } else {
+                R.string.update_skipped_versions_expand
+            },
+            intermediateNotesSummary
+        )
+    }
+
     private fun applySystemBarInsets() {
         SystemBarInsetApplier.apply(findViewById(R.id.updateRoot))
     }
@@ -211,6 +261,8 @@ class UpdateActivity : AppCompatActivity() {
         private const val EXTRA_APK_URL = "update_apk_url"
         private const val EXTRA_PRERELEASE = "update_prerelease"
         private const val EXTRA_INTERMEDIATE_NOTES = "update_intermediate_notes"
+        private const val EXTRA_INTERMEDIATE_COUNT = "update_intermediate_count"
+        private const val STATE_INTERMEDIATE_NOTES_EXPANDED = "intermediate_notes_expanded"
         private const val MAX_NOTES_EXTRA_CHARS = 80_000
 
         fun createIntent(context: Context, updateInfo: AppUpdateInfo): Intent {
@@ -226,6 +278,7 @@ class UpdateActivity : AppCompatActivity() {
                 putExtra(EXTRA_APK_URL, updateInfo.apkDownloadUrl)
                 putExtra(EXTRA_PRERELEASE, updateInfo.isPrerelease)
                 putExtra(EXTRA_INTERMEDIATE_NOTES, intermediate)
+                putExtra(EXTRA_INTERMEDIATE_COUNT, updateInfo.intermediateReleaseNotes.size)
             }
         }
 

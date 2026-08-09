@@ -19,7 +19,8 @@ data class LocationSample(
     val elapsedRealtimeNanos: Long,
     val ageMillis: Long,
     val isMock: Boolean,
-    val source: LocationSampleSource
+    val source: LocationSampleSource,
+    val mockAcceptedForDevelopment: Boolean = false
 ) {
     fun refreshedAge(nowWallTimeMillis: Long = System.currentTimeMillis()): LocationSample =
         copy(ageMillis = max(ageMillis, max(0L, nowWallTimeMillis - wallTimeMillis)))
@@ -29,7 +30,7 @@ data class LocationSample(
             accuracyMeters.isFinite() &&
             accuracyMeters in 0f..MAX_DISPLAY_ACCURACY_METERS &&
             ageMillis in 0L..MAX_DISPLAY_AGE_MILLIS &&
-            !isMock
+            (!isMock || mockAcceptedForDevelopment)
 
     fun isEligibleForArrival(): Boolean =
         isUsableForDisplay() &&
@@ -50,6 +51,7 @@ object LocationSampleFactory {
     fun fromAndroidLocation(
         location: Location,
         source: LocationSampleSource,
+        allowMockForDevelopment: Boolean = false,
         nowElapsedRealtimeNanos: Long = SystemClock.elapsedRealtimeNanos(),
         nowWallTimeMillis: Long = System.currentTimeMillis()
     ): LocationSample? {
@@ -71,19 +73,21 @@ object LocationSampleFactory {
         }
         val ageMillis = monotonicAgeMillis ?: wallAgeMillis
 
+        val isMock = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            location.isMock
+        } else {
+            @Suppress("DEPRECATION")
+            location.isFromMockProvider
+        }
         return LocationSample(
             position = position,
             accuracyMeters = accuracy,
             wallTimeMillis = location.time.takeIf { it > 0L } ?: nowWallTimeMillis,
             elapsedRealtimeNanos = location.elapsedRealtimeNanos,
             ageMillis = ageMillis,
-            isMock = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                location.isMock
-            } else {
-                @Suppress("DEPRECATION")
-                location.isFromMockProvider
-            },
-            source = source
+            isMock = isMock,
+            source = source,
+            mockAcceptedForDevelopment = isMock && allowMockForDevelopment
         ).takeIf { it.isUsableForDisplay() }
     }
 
@@ -91,6 +95,8 @@ object LocationSampleFactory {
         position: Destination,
         accuracyMeters: Float,
         wallTimeMillis: Long,
+        isMock: Boolean = false,
+        allowMockForDevelopment: Boolean = false,
         nowWallTimeMillis: Long = System.currentTimeMillis()
     ): LocationSample? {
         if (wallTimeMillis <= 0L || nowWallTimeMillis + MAX_CLOCK_SKEW_MILLIS < wallTimeMillis) {
@@ -102,8 +108,9 @@ object LocationSampleFactory {
             wallTimeMillis = wallTimeMillis,
             elapsedRealtimeNanos = 0L,
             ageMillis = max(0L, nowWallTimeMillis - wallTimeMillis),
-            isMock = false,
-            source = LocationSampleSource.PERSISTED
+            isMock = isMock,
+            source = LocationSampleSource.PERSISTED,
+            mockAcceptedForDevelopment = isMock && allowMockForDevelopment
         ).takeIf { it.isUsableForDisplay() }
     }
 

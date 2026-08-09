@@ -4,11 +4,13 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.util.TypedValue
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.view.doOnLayout
 import androidx.core.view.setPadding
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -25,17 +27,12 @@ class AboutActivity : AppCompatActivity() {
         val (simpleVersion, _) = splitVersionAndChannel(versionName)
         val channel = ReleaseChannelDetector.detect(versionName)
         val channelLabel = resolveChannelLabel(channel)
-        val summaryChannelLabel =
-            if (channel == ReleaseChannel.INTDEV) channel.canonicalName else channelLabel
-        val summaryVersionName =
-            if (channel == ReleaseChannel.INTDEV) simpleVersion else versionName
-        findViewById<TextView>(R.id.aboutVersionText).text =
-            getString(
-                R.string.about_version_label,
-                summaryChannelLabel,
-                summaryVersionName,
-                versionCode,
-            )
+        configureVersionSummary(
+            findViewById(R.id.aboutVersionText),
+            channelLabel,
+            versionName,
+            versionCode,
+        )
         findViewById<TextView>(R.id.aboutDevChannelText).text =
             channel.canonicalName
         findViewById<TextView>(R.id.aboutSimpleVersionText).text =
@@ -131,6 +128,37 @@ class AboutActivity : AppCompatActivity() {
             Pair(versionName, versionCode)
         } catch (_: Exception) {
             Pair("unknown", 0)
+        }
+    }
+
+    private fun configureVersionSummary(
+        view: TextView,
+        channelLabel: String,
+        versionName: String,
+        versionCode: Int,
+    ) {
+        val summaryWithVersionCode = getString(
+            R.string.about_version_label,
+            channelLabel,
+            versionName,
+            versionCode,
+        )
+        view.text = summaryWithVersionCode
+        view.doOnLayout {
+            val availableWidth = view.width - view.compoundPaddingLeft - view.compoundPaddingRight
+            if (view.paint.measureText(summaryWithVersionCode) > availableWidth) {
+                view.text = getString(
+                    R.string.about_version_label_without_code,
+                    channelLabel,
+                    versionName,
+                )
+                view.setAutoSizeTextTypeUniformWithConfiguration(
+                    11,
+                    14,
+                    1,
+                    TypedValue.COMPLEX_UNIT_SP,
+                )
+            }
         }
     }
 

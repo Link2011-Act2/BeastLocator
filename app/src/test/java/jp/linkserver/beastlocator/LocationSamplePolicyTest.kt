@@ -22,6 +22,17 @@ class LocationSamplePolicyTest {
     }
 
     @Test
+    fun explicitlyAcceptedDevelopmentMockCanDriveDisplayAndArrival() {
+        val acceptedMock = sample(
+            isMock = true,
+            mockAcceptedForDevelopment = true
+        )
+
+        assertTrue(acceptedMock.isUsableForDisplay())
+        assertTrue(acceptedMock.isEligibleForArrival())
+    }
+
+    @Test
     fun refreshedAgeCannotMakeASampleYounger() {
         val initial = sample(wallTimeMillis = 1_000L, ageMillis = 500L)
         assertTrue(initial.refreshedAge(5_000L).ageMillis == 4_000L)
@@ -42,6 +53,7 @@ class LocationSamplePolicyTest {
         ageMillis: Long = 0L,
         accuracyMeters: Float = 10f,
         isMock: Boolean = false,
+        mockAcceptedForDevelopment: Boolean = false,
         source: LocationSampleSource = LocationSampleSource.CONTINUOUS
     ) = LocationSample(
         position = position,
@@ -50,6 +62,7 @@ class LocationSamplePolicyTest {
         elapsedRealtimeNanos = 1L,
         ageMillis = ageMillis,
         isMock = isMock,
-        source = source
+        source = source,
+        mockAcceptedForDevelopment = mockAcceptedForDevelopment
     )
 }

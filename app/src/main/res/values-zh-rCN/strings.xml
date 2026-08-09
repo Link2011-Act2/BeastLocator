@@ -113,7 +113,6 @@
     <string name="about_section_help">显示应用信息和开源许可</string>
     <string name="about_section_open">显示</string>
     <string name="about_screen_title">关于本应用</string>
-    <string name="about_version_label">%1$s  v%2$s (%3$d)</string>
     <string name="about_dev_channel_title">开发频道</string>
     <string name="about_dev_channel_dialog_title">开发频道: %1$s</string>
     <string name="about_dev_channel_value_intdev">内部验证版</string>
@@ -157,6 +156,11 @@
     <string name="update_screen_title">应用更新</string>
     <string name="update_release_notes_title">发行说明</string>
     <string name="update_release_notes_empty">没有发行说明</string>
+    <plurals name="update_skipped_versions_count">
+        <item quantity="other">已跳过 %1$d 个版本</item>
+    </plurals>
+    <string name="update_skipped_versions_expand">%1$s。显示发行说明</string>
+    <string name="update_skipped_versions_collapse">%1$s。隐藏发行说明</string>
     <string name="update_asset_name">APK：%1$s</string>
     <string name="update_apk_not_found">此版本没有 APK。请查看 GitHub 发布页面。</string>
     <string name="update_download_install_button">下载并安装</string>
@@ -227,6 +231,8 @@
     <string name="debug_section_title">调试</string>
     <string name="debug_revision_title">构建编号</string>
     <string name="debug_revision_value">%1$s</string>
+    <string name="debug_allow_mock_location_title">允许模拟位置</string>
+    <string name="debug_allow_mock_location_help">将 Fake Traveler 等应用提供的模拟位置用于距离显示和到达判定。仅在开发版本中可用。</string>
     <string name="debug_update_testing_title">更新测试</string>
     <string name="debug_update_show_latest_title">始终将最新 Release 视为可用更新</string>
     <string name="debug_update_show_latest_help">IntDev 测试设置。即使版本并不较新，也会将 GitHub 上最新的 Release 显示为可用更新。</string>

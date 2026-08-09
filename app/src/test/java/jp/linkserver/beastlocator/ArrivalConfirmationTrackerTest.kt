@@ -33,10 +33,44 @@ class ArrivalConfirmationTrackerTest {
     }
 
     @Test
+    fun confirmsImmediatelyWhenCloseAndAccurate() {
+        val tracker = ArrivalConfirmationTracker()
+
+        assertEquals(
+            ArrivalObservation.CONFIRMED,
+            tracker.observe(sample(1_000L, accuracyMeters = 25f), 25f, 1L, false)
+        )
+    }
+
+    @Test
+    fun closeButLessAccurateSampleStillRequiresConfirmation() {
+        val tracker = ArrivalConfirmationTracker()
+
+        assertEquals(
+            ArrivalObservation.CANDIDATE,
+            tracker.observe(sample(1_000L, accuracyMeters = 25.1f), 20f, 1L, false)
+        )
+        assertEquals(
+            ArrivalObservation.CONFIRMED,
+            tracker.observe(sample(2_000L, accuracyMeters = 25.1f), 20f, 1L, false)
+        )
+    }
+
+    @Test
+    fun accurateSampleOutsideImmediateRadiusStillRequiresConfirmation() {
+        val tracker = ArrivalConfirmationTracker()
+
+        assertEquals(
+            ArrivalObservation.CANDIDATE,
+            tracker.observe(sample(1_000L), 25.1f, 1L, false)
+        )
+    }
+
+    @Test
     fun destinationGenerationBreaksCandidateSequence() {
         val tracker = ArrivalConfirmationTracker()
-        assertEquals(ArrivalObservation.CANDIDATE, tracker.observe(sample(1_000L), 20f, 1L, false))
-        assertEquals(ArrivalObservation.CANDIDATE, tracker.observe(sample(2_000L), 20f, 2L, false))
+        assertEquals(ArrivalObservation.CANDIDATE, tracker.observe(sample(1_000L), 40f, 1L, false))
+        assertEquals(ArrivalObservation.CANDIDATE, tracker.observe(sample(2_000L), 40f, 2L, false))
     }
 
     @Test
@@ -61,4 +95,3 @@ class ArrivalConfirmationTrackerTest {
         source = LocationSampleSource.CONTINUOUS
     )
 }
-

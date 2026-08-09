@@ -101,17 +101,65 @@
                 android:textColor="@color/expressive_on_surface_variant"
                 android:textSize="14sp" />
 
-            <TextView
-                android:id="@+id/updateIntermediateNotesText"
+            <LinearLayout
+                android:id="@+id/updateIntermediateNotesSection"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
                 android:background="@drawable/widget_bg"
-                android:fontFamily="sans-serif"
-                android:lineSpacingExtra="3dp"
-                android:padding="16dp"
-                android:textColor="@color/expressive_on_surface_variant"
-                android:textSize="13sp" />
+                android:clipToOutline="true"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:id="@+id/updateIntermediateNotesToggle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:minHeight="56dp"
+                    android:orientation="horizontal"
+                    android:paddingStart="16dp"
+                    android:paddingTop="12dp"
+                    android:paddingEnd="12dp"
+                    android:paddingBottom="12dp">
+
+                    <TextView
+                        android:id="@+id/updateIntermediateNotesToggleText"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:fontFamily="sans-serif"
+                        android:textColor="@color/expressive_on_surface"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+
+                    <ImageView
+                        android:id="@+id/updateIntermediateNotesChevron"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:layout_marginStart="8dp"
+                        android:importantForAccessibility="no"
+                        android:src="@drawable/ic_expand_more"
+                        app:tint="@color/expressive_primary" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/updateIntermediateNotesText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="sans-serif"
+                    android:lineSpacingExtra="3dp"
+                    android:paddingStart="16dp"
+                    android:paddingTop="4dp"
+                    android:paddingEnd="16dp"
+                    android:paddingBottom="16dp"
+                    android:textColor="@color/expressive_on_surface_variant"
+                    android:textSize="13sp"
+                    android:visibility="gone" />
+            </LinearLayout>
 
             <TextView
                 android:id="@+id/updateAssetText"

@@ -64,7 +64,11 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
 
         val destination = store.getDestination()
         val triggeringSample = event.triggeringLocation?.let {
-            LocationSampleFactory.fromAndroidLocation(it, LocationSampleSource.GEOFENCE)
+            LocationSampleFactory.fromAndroidLocation(
+                it,
+                LocationSampleSource.GEOFENCE,
+                allowMockForDevelopment = store.isMockLocationAllowedForTesting()
+            )
         }?.takeIf { it.isEligibleForArrival() }
 
         if (transition == Geofence.GEOFENCE_TRANSITION_EXIT) {
@@ -236,7 +240,8 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
 
                     val sample = LocationSampleFactory.fromAndroidLocation(
                         location,
-                        LocationSampleSource.GEOFENCE
+                        LocationSampleSource.GEOFENCE,
+                        allowMockForDevelopment = currentStore.isMockLocationAllowedForTesting()
                     )?.takeIf { it.isEligibleForArrival() } ?: continue
                     val completed = forwardSampleIfNew(
                         context,

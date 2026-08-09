@@ -83,6 +83,20 @@ class SettingsActivity : AppCompatActivity() {
         val debugResetDestinationButton = findViewById<Button>(R.id.debugResetDestinationButton)
         val currentVersionName = resolveAppVersionName()
 
+        val debugMockLocationContainer =
+            findViewById<LinearLayout>(R.id.debugMockLocationContainer)
+        val debugMockLocationSwitch =
+            findViewById<MaterialSwitch>(R.id.debugMockLocationSwitch)
+        debugMockLocationContainer.visibility = if (store.isMockLocationTestingAvailable()) {
+            android.view.View.VISIBLE
+        } else {
+            android.view.View.GONE
+        }
+        debugMockLocationSwitch.isChecked = store.isMockLocationAllowedForTesting()
+        debugMockLocationSwitch.setOnCheckedChangeListener { _, enabled ->
+            store.setMockLocationAllowedForTesting(enabled)
+        }
+
         findViewById<TextView>(R.id.versionText).text =
             getString(R.string.version_format, currentVersionName)
         debugRevisionValue.text = getString(R.string.debug_revision_value, BuildConfig.BUILD_NUMBER)

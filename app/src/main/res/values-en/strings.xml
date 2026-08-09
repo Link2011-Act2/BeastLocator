@@ -113,7 +113,6 @@
     <string name="about_section_help">View app information and OSS licenses</string>
     <string name="about_section_open">View</string>
     <string name="about_screen_title">About This App</string>
-    <string name="about_version_label">%1$s  v%2$s (%3$d)</string>
     <string name="about_dev_channel_title">Development Channel</string>
     <string name="about_dev_channel_dialog_title">Development Channel: %1$s</string>
     <string name="about_dev_channel_value_intdev">Internal Testing Build</string>
@@ -157,6 +156,12 @@
     <string name="update_screen_title">App Update</string>
     <string name="update_release_notes_title">Release Notes</string>
     <string name="update_release_notes_empty">No release notes are available</string>
+    <plurals name="update_skipped_versions_count">
+        <item quantity="one">%1$d version was skipped</item>
+        <item quantity="other">%1$d versions were skipped</item>
+    </plurals>
+    <string name="update_skipped_versions_expand">%1$s. Show release notes</string>
+    <string name="update_skipped_versions_collapse">%1$s. Hide release notes</string>
     <string name="update_asset_name">APK: %1$s</string>
     <string name="update_apk_not_found">This release has no APK. Check the GitHub release page.</string>
     <string name="update_download_install_button">Download and Install</string>
@@ -227,6 +232,8 @@
     <string name="debug_section_title">Debug</string>
     <string name="debug_revision_title">Build Number</string>
     <string name="debug_revision_value">%1$s</string>
+    <string name="debug_allow_mock_location_title">Allow mock locations</string>
+    <string name="debug_allow_mock_location_help">Use simulated locations from apps such as Fake Traveler for distance display and arrival detection. Available only in development versions.</string>
     <string name="debug_update_testing_title">Update Testing</string>
     <string name="debug_update_show_latest_title">Always treat the latest release as an update</string>
     <string name="debug_update_show_latest_help">IntDev test setting. The latest GitHub release is shown as an update even when it is not newer.</string>

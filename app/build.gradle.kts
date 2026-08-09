@@ -29,7 +29,7 @@ plugins {
 }
 
 val appCodeName = "NKTIDKSG"
-val appVersionName = "0.9.6-IntDev_rev0"
+val appVersionName = "1.0.0-RC1"
 val buildNumberFiles = (
     fileTree("src") { exclude("**/build/**") }.files + listOf(
         project.file("build.gradle.kts"),

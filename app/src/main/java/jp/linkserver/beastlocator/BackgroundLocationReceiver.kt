@@ -31,7 +31,8 @@ class BackgroundLocationReceiver : BroadcastReceiver() {
         for (location in result.locations) {
             val sample = LocationSampleFactory.fromAndroidLocation(
                 location,
-                LocationSampleSource.CONTINUOUS
+                LocationSampleSource.CONTINUOUS,
+                allowMockForDevelopment = store.isMockLocationAllowedForTesting()
             ) ?: continue
             if (!sampleGate.accept(sample)) continue
             acceptedAnySample = true

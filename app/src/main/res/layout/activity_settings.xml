@@ -710,6 +710,31 @@
                         android:textStyle="bold" />
 
                     <LinearLayout
+                        android:id="@+id/debugMockLocationContainer"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:orientation="vertical"
+                        android:visibility="gone">
+
+                        <com.google.android.material.materialswitch.MaterialSwitch
+                            android:id="@+id/debugMockLocationSwitch"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/debug_allow_mock_location_title"
+                            android:textColor="@color/expressive_on_surface"
+                            android:textSize="14sp" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="sans-serif"
+                            android:text="@string/debug_allow_mock_location_help"
+                            android:textColor="@color/expressive_on_surface_variant"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+
+                    <LinearLayout
                         android:id="@+id/debugUpdateTestingContainer"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"

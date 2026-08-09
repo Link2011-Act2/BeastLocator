@@ -113,7 +113,8 @@
     <string name="about_section_help">アプリ情報とオープンソースライセンスを表示します</string>
     <string name="about_section_open">表示する</string>
     <string name="about_screen_title">このアプリについて</string>
-    <string name="about_version_label" translatable="false">%1$s  v%2$s (%3$d)</string>
+    <string name="about_version_label" translatable="false">%1$s v%2$s (%3$d)</string>
+    <string name="about_version_label_without_code" translatable="false">%1$s v%2$s</string>
     <string name="about_dev_channel_title">開発チャネル</string>
     <string name="about_dev_channel_dialog_title">開発チャネル: %1$s</string>
     <string name="about_dev_channel_value_intdev">内部検証版</string>
@@ -157,6 +158,11 @@
     <string name="update_screen_title">アプリのアップデート</string>
     <string name="update_release_notes_title">リリースノート</string>
     <string name="update_release_notes_empty">リリースノートはありません</string>
+    <plurals name="update_skipped_versions_count">
+        <item quantity="other">%1$d件のバージョンをスキップしました</item>
+    </plurals>
+    <string name="update_skipped_versions_expand">%1$s。リリースノートを表示</string>
+    <string name="update_skipped_versions_collapse">%1$s。リリースノートを非表示</string>
     <string name="update_asset_name">APK: %1$s</string>
     <string name="update_apk_not_found">このリリースにはAPKがありません。GitHubのリリースページを確認してください。</string>
     <string name="update_download_install_button">ダウンロードしてインストール</string>
@@ -227,6 +233,8 @@
     <string name="debug_section_title">デバッグ</string>
     <string name="debug_revision_title">ビルド番号</string>
     <string name="debug_revision_value" translatable="false">%1$s</string>
+    <string name="debug_allow_mock_location_title">モック位置を許可</string>
+    <string name="debug_allow_mock_location_help">Fake Travelerなどの模擬位置を、距離表示と到着判定に使用します。開発版でのみ有効です。</string>
     <string name="debug_update_testing_title">アップデート確認</string>
     <string name="debug_update_show_latest_title">最新Releaseを常に更新として扱う</string>
     <string name="debug_update_show_latest_help">IntDev用のテスト設定です。現在より新しくなくても、GitHubの最新Releaseを更新ありとして表示します。</string>

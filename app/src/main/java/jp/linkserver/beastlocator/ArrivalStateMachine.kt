@@ -36,6 +36,12 @@ class ArrivalConfirmationTracker(
             resetCandidate()
             return ArrivalObservation.OUTSIDE
         }
+        if (distanceMeters <= IMMEDIATE_ARRIVAL_THRESHOLD_METERS &&
+            sample.accuracyMeters <= IMMEDIATE_ARRIVAL_MAX_ACCURACY_METERS
+        ) {
+            resetCandidate()
+            return ArrivalObservation.CONFIRMED
+        }
 
         val continuesCandidate = candidateGeneration == destinationGeneration &&
             lastCandidateWallTimeMillis > 0L &&
@@ -67,6 +73,8 @@ class ArrivalConfirmationTracker(
 
     companion object {
         const val ARRIVAL_THRESHOLD_METERS = 50f
+        const val IMMEDIATE_ARRIVAL_THRESHOLD_METERS = 25f
+        const val IMMEDIATE_ARRIVAL_MAX_ACCURACY_METERS = 25f
         const val ARRIVAL_EXIT_THRESHOLD_METERS = 75f
         const val REQUIRED_ARRIVAL_SAMPLES = 2
         const val MAX_ARRIVAL_SAMPLE_GAP_MILLIS = 15_000L

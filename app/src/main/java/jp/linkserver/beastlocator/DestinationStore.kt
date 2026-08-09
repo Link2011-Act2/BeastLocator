@@ -143,6 +143,7 @@ class DestinationStore(context: Context) {
             .putLong(KEY_LAST_LNG, java.lang.Double.doubleToRawLongBits(lng))
             .putFloat(KEY_LAST_LOCATION_ACCURACY, LocationSample.MAX_DISPLAY_ACCURACY_METERS)
             .putLong(KEY_LAST_LOCATION_TIME, System.currentTimeMillis())
+            .putBoolean(KEY_LAST_LOCATION_IS_MOCK, false)
             .apply()
     }
 
@@ -173,6 +174,7 @@ class DestinationStore(context: Context) {
             .putLong(KEY_LAST_LNG, java.lang.Double.doubleToRawLongBits(sample.position.lng))
             .putFloat(KEY_LAST_LOCATION_ACCURACY, sample.accuracyMeters)
             .putLong(KEY_LAST_LOCATION_TIME, sample.wallTimeMillis)
+            .putBoolean(KEY_LAST_LOCATION_IS_MOCK, sample.isMock)
             .apply()
         return true
     }
@@ -191,6 +193,7 @@ class DestinationStore(context: Context) {
             .remove(KEY_LAST_LNG)
             .remove(KEY_LAST_LOCATION_ACCURACY)
             .remove(KEY_LAST_LOCATION_TIME)
+            .remove(KEY_LAST_LOCATION_IS_MOCK)
             .remove(KEY_LAST_HEADING)
             .remove(KEY_LAST_HEADING_TIME)
             .apply()
@@ -206,6 +209,7 @@ class DestinationStore(context: Context) {
             .putLong(KEY_LAST_LNG, java.lang.Double.doubleToRawLongBits(lng))
             .putFloat(KEY_LAST_LOCATION_ACCURACY, 0f)
             .putLong(KEY_LAST_LOCATION_TIME, System.currentTimeMillis())
+            .putBoolean(KEY_LAST_LOCATION_IS_MOCK, false)
             .putBoolean(KEY_DEBUG_DISTANCE_OVERRIDE_ENABLED, true)
             .apply()
     }
@@ -216,6 +220,7 @@ class DestinationStore(context: Context) {
             .remove(KEY_LAST_LNG)
             .remove(KEY_LAST_LOCATION_ACCURACY)
             .remove(KEY_LAST_LOCATION_TIME)
+            .remove(KEY_LAST_LOCATION_IS_MOCK)
             .remove(KEY_LAST_HEADING)
             .remove(KEY_LAST_HEADING_TIME)
             .putBoolean(KEY_DEBUG_DISTANCE_OVERRIDE_ENABLED, false)
@@ -338,6 +343,17 @@ class DestinationStore(context: Context) {
 
     fun setScreenshotWarningEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_SCREENSHOT_WARNING_ENABLED, enabled).apply()
+    }
+
+    fun isMockLocationTestingAvailable(): Boolean =
+        ReleaseChannelDetector.detect(BuildConfig.VERSION_NAME).exposesDebugControlsByDefault
+
+    fun isMockLocationAllowedForTesting(): Boolean =
+        isMockLocationTestingAvailable() && prefs.getBoolean(KEY_ALLOW_MOCK_LOCATIONS, false)
+
+    fun setMockLocationAllowedForTesting(enabled: Boolean) {
+        val safelyEnabled = enabled && isMockLocationTestingAvailable()
+        prefs.edit().putBoolean(KEY_ALLOW_MOCK_LOCATIONS, safelyEnabled).apply()
     }
 
     fun isArrivalSoundEnabled(): Boolean =
@@ -482,7 +498,9 @@ class DestinationStore(context: Context) {
                 KEY_LAST_LOCATION_ACCURACY,
                 LocationSample.MAX_DISPLAY_ACCURACY_METERS
             ),
-            wallTimeMillis = runtimePrefs.getLong(KEY_LAST_LOCATION_TIME, 0L)
+            wallTimeMillis = runtimePrefs.getLong(KEY_LAST_LOCATION_TIME, 0L),
+            isMock = runtimePrefs.getBoolean(KEY_LAST_LOCATION_IS_MOCK, false),
+            allowMockForDevelopment = isMockLocationAllowedForTesting()
         )
     }
 
@@ -632,6 +650,7 @@ class DestinationStore(context: Context) {
         private const val KEY_LAST_LNG = "last_lng"
         private const val KEY_LAST_LOCATION_ACCURACY = "last_location_accuracy"
         private const val KEY_LAST_LOCATION_TIME = "last_location_time"
+        private const val KEY_LAST_LOCATION_IS_MOCK = "last_location_is_mock"
         private const val KEY_LAST_HEADING = "last_heading"
         private const val KEY_LAST_HEADING_TIME = "last_heading_time"
         private const val KEY_DEBUG_DISTANCE_OVERRIDE_ENABLED = "debug_distance_override_enabled"
@@ -646,6 +665,7 @@ class DestinationStore(context: Context) {
         private const val KEY_DISTANCE_MASK_BUTTON_VISIBLE = "distance_mask_button_visible"
         private const val KEY_MANUAL_DISTANCE_MASK_ENABLED = "manual_distance_mask_enabled"
         private const val KEY_SCREENSHOT_WARNING_ENABLED = "screenshot_warning_enabled"
+        private const val KEY_ALLOW_MOCK_LOCATIONS = "allow_mock_locations"
         private const val KEY_ARRIVAL_SOUND_ENABLED = "arrival_sound_enabled"
         private const val KEY_DISTANCE_114514_SOUND_ENABLED = "distance_114514_sound_enabled"
         private const val KEY_DISTANCE_INTERVAL_SOUND_ENABLED = "distance_interval_sound_enabled"
@@ -712,6 +732,7 @@ class DestinationStore(context: Context) {
             KEY_DISTANCE_MASK_BUTTON_VISIBLE,
             KEY_MANUAL_DISTANCE_MASK_ENABLED,
             KEY_SCREENSHOT_WARNING_ENABLED,
+            KEY_ALLOW_MOCK_LOCATIONS,
             KEY_ARRIVAL_SOUND_ENABLED,
             KEY_DISTANCE_114514_SOUND_ENABLED,
             KEY_DISTANCE_INTERVAL_SOUND_ENABLED,

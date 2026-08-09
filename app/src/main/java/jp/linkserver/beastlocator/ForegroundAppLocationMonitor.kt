@@ -57,6 +57,7 @@ object ForegroundAppLocationMonitor {
                     val sample = LocationSampleFactory.fromAndroidLocation(
                         location,
                         LocationSampleSource.CONTINUOUS,
+                        allowMockForDevelopment = store.isMockLocationAllowedForTesting(),
                     ) ?: continue
                     if (!sampleGate.accept(sample)) continue
                     processSample(applicationContext, sample)

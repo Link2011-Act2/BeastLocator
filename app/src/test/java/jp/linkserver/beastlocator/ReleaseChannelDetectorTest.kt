@@ -1,6 +1,8 @@
 package jp.linkserver.beastlocator
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ReleaseChannelDetectorTest {
@@ -22,5 +24,14 @@ class ReleaseChannelDetectorTest {
         assertEquals(ReleaseChannel.RELEASE, ReleaseChannelDetector.detect("1.0.0-Stable"))
         assertEquals(ReleaseChannel.RELEASE, ReleaseChannelDetector.detect("1.0.0-Release"))
         assertEquals(ReleaseChannel.UNKNOWN, ReleaseChannelDetector.detect("1.0.0"))
+    }
+
+    @Test
+    fun onlyDevelopmentChannelsExposeDevelopmentControls() {
+        assertTrue(ReleaseChannel.INTDEV.exposesDebugControlsByDefault)
+        assertTrue(ReleaseChannel.BETA.exposesDebugControlsByDefault)
+        assertTrue(ReleaseChannel.PRE_RELEASE.exposesDebugControlsByDefault)
+        assertFalse(ReleaseChannel.RELEASE.exposesDebugControlsByDefault)
+        assertFalse(ReleaseChannel.UNKNOWN.exposesDebugControlsByDefault)
     }
 }
