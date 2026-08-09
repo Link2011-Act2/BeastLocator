@@ -16,6 +16,7 @@ local.properties
 .tmp-gradle-home/
 build/
 app/build/
+/app/release/
 *.apk
 
 # IDE (Android Studio / IntelliJ)
