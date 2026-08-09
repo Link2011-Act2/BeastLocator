@@ -35,6 +35,14 @@ object NotificationHelper {
         postDestinationReached(context, message, isContentUpdate = true)
     }
 
+    fun cancelDestinationReached(context: Context) {
+        runCatching {
+            NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID)
+        }.onFailure {
+            AppDiagnostics.warn("arrival_notification_cancel_failed", error = it)
+        }
+    }
+
     private fun postDestinationReached(
         context: Context,
         message: String,

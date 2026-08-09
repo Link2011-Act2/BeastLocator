@@ -21,8 +21,17 @@
     <string name="welcome_message">このアプリがあれば、野獣邸までの方向を瞬時に把握できます\n\n⚠️このアプリは、個人的に制作したファン向けのアプリです。コートコーポレーション本社周辺での迷惑行為を推奨、および助長するものではありません。</string>
     <string name="welcome_start_button">はじめる</string>
     <string name="fixed_destination_title">現在の目的地</string>
-    <string name="fixed_destination_help">野獣邸の座標です。この目的地を案内します</string>
+    <string name="fixed_destination_help">この座標を目的地として案内します</string>
     <string name="fixed_destination_value_format">緯度 %1$s / 経度 %2$s</string>
+    <string name="edit_destination_button">目的地を編集</string>
+    <string name="edit_destination_title">目的地を編集</string>
+    <string name="edit_destination_message">緯度と経度を入力するか、地図から位置を選んでください</string>
+    <string name="edit_destination_save">保存</string>
+    <string name="edit_destination_choose_map">地図から選ぶ</string>
+    <string name="edit_destination_reset_default">初期目的地に戻す</string>
+    <string name="edit_destination_saved">目的地を更新しました</string>
+    <string name="edit_destination_unchanged">目的地は変更されていません</string>
+    <string name="edit_destination_reset_done">初期目的地に戻しました</string>
 
     <string name="radius_title">行き先の抽選半径</string>
     <string name="radius_help">数値をタップで手動入力</string>
@@ -31,6 +40,8 @@
     <string name="manual_destination_lat_hint">緯度 (例: 35.665554)</string>
     <string name="manual_destination_lng_hint">経度 (例: 139.669717)</string>
     <string name="manual_destination_invalid">緯度は-90〜90、経度は-180〜180で入力してください</string>
+    <string name="manual_destination_lat_invalid">緯度は-90〜90で入力してください</string>
+    <string name="manual_destination_lng_invalid">経度は-180〜180で入力してください</string>
     <string name="land_only_destination_toggle">陸地のみを指定する (Beta)</string>
     <string name="land_only_destination_help">目的地の抽選時に海上の候補を避けるようになります。場合によって海上の位置が選ばれることがあります</string>
     <string name="destination_action_title">目的地の設定</string>
@@ -95,10 +106,14 @@
     <string name="widget_bearing_mode_relative">相対方位（端末の向き基準）</string>
     <string name="live_update_toggle_unsupported">到達進捗を通知で表示 (Android 16+)</string>
     <string name="experimental_settings_title">実験的機能</string>
-    <string name="experimental_settings_help">将来的に追加される機能の設定</string>
+    <string name="experimental_settings_help">正式提供前の機能を試すための設定</string>
     <string name="experimental_settings_open">実験的機能の設定を開く</string>
     <string name="experimental_settings_screen_title">実験的機能</string>
-    <string name="experimental_settings_screen_help">将来的に追加される機能です</string>
+    <string name="experimental_settings_screen_help">正式提供前の機能を試すことができます</string>
+    <string name="experimental_destination_editing_title">目的地編集</string>
+    <string name="experimental_destination_editing_help">現在の目的地を変更する実験的な機能です</string>
+    <string name="experimental_destination_editing_toggle">目的地編集を有効にする</string>
+    <string name="experimental_destination_editing_toggle_help">有効にすると、設定画面から緯度・経度や地図で目的地を選べます。無効にしても設定済みの目的地は維持されます</string>
     <string name="experimental_language_title">言語設定</string>
     <string name="experimental_language_help">ローカライズの設定</string>
     <string name="experimental_language_toggle">日本語以外の言語も使用可能にする</string>
@@ -109,6 +124,23 @@
     <string name="experimental_compass_smoothing_toggle">野獣先輩の動きを平滑化</string>
     <string name="experimental_compass_smoothing_toggle_help">ONにすることで、野獣先輩の動きを多少滑らかにすることができます</string>
     <string name="back">戻る</string>
+    <string name="destination_picker_title">地図から目的地を選ぶ</string>
+    <string name="destination_search_hint">住所・施設名を検索</string>
+    <string name="destination_search_button">検索</string>
+    <string name="destination_search_empty">住所または施設名を入力してください</string>
+    <string name="destination_search_in_progress">位置を検索しています</string>
+    <string name="destination_search_no_results">位置を見つけられませんでした。別の名称をお試しください</string>
+    <string name="destination_search_failed">位置を検索できませんでした。通信状態を確認するか、緯度・経度で指定してください</string>
+    <string name="destination_search_results_title">検索結果</string>
+    <string name="destination_current_location">現在地へ移動</string>
+    <string name="destination_current_location_unavailable">利用できる現在地がありません</string>
+    <string name="destination_use_this_location">この位置に設定</string>
+    <string name="destination_selected_format">緯度 %1$s / 経度 %2$s</string>
+    <string name="destination_editing_disabled">実験的機能の「目的地編集」を有効にしてください</string>
+    <string name="osm_attribution">© OpenStreetMap contributors</string>
+    <string name="osm_attribution_url" translatable="false">https://www.openstreetmap.org/copyright</string>
+    <string name="osm_attribution_html" translatable="false">&lt;a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors&lt;/a></string>
+    <string name="osm_tile_url" translatable="false">https://tile.openstreetmap.org/{z}/{x}/{y}.png</string>
     <string name="about_section_title">このアプリについて</string>
     <string name="about_section_help">アプリ情報とオープンソースライセンスを表示します</string>
     <string name="about_section_open">表示する</string>

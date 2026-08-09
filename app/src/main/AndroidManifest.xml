@@ -31,6 +31,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".DestinationPickerActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".WelcomeActivity"
             android:exported="false" />
 

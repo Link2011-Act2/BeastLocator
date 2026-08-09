@@ -41,7 +41,14 @@ class ExperimentalSettingsActivity : AppCompatActivity() {
         val distanceIntervalSoundSwitch = findViewById<MaterialSwitch>(R.id.distanceIntervalSoundSwitch)
         val compassSmoothingSwitch = findViewById<MaterialSwitch>(R.id.compassSmoothingSwitch)
         val nonJapaneseLanguageSwitch = findViewById<MaterialSwitch>(R.id.nonJapaneseLanguageSwitch)
+        val destinationEditingSwitch =
+            findViewById<MaterialSwitch>(R.id.destinationEditingSwitch)
         val openLanguageSettingsButton = findViewById<Button>(R.id.openLanguageSettingsButton)
+
+        destinationEditingSwitch.isChecked = store.isExperimentalDestinationEditingEnabled()
+        destinationEditingSwitch.setOnCheckedChangeListener { _, isChecked ->
+            store.setExperimentalDestinationEditingEnabled(isChecked)
+        }
 
         val initialDistanceIntervalSound = store.getDistanceIntervalSoundMeters()
             .coerceIn(DISTANCE_INTERVAL_SOUND_MIN_METERS, DISTANCE_INTERVAL_SOUND_MAX_METERS)

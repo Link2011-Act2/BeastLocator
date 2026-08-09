@@ -12,16 +12,61 @@ import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 import org.gradle.api.artifacts.result.ResolvedArtifactResult
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.provider.Property
 import org.gradle.maven.MavenModule
 import org.gradle.maven.MavenPomArtifact
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputFiles
+import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.TaskAction
 import java.util.zip.ZipFile
 import javax.xml.XMLConstants
 import javax.xml.parsers.DocumentBuilderFactory
+import com.android.build.api.artifact.ArtifactTransformationRequest
+import com.android.build.api.artifact.SingleArtifact
+import com.android.build.api.variant.FilterConfiguration
 
 abstract class GenerateOssAssetsTask : DefaultTask() {
     @get:OutputDirectory
     abstract val outputDirectory: DirectoryProperty
+}
+
+abstract class RenameApkOutputsTask : DefaultTask() {
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val inputApkDirectory: DirectoryProperty
+
+    @get:OutputDirectory
+    abstract val outputApkDirectory: DirectoryProperty
+
+    @get:Input
+    abstract val apkVersionLabel: Property<String>
+
+    @get:Internal
+    abstract val transformationRequest:
+        Property<ArtifactTransformationRequest<RenameApkOutputsTask>>
+
+    @TaskAction
+    fun renameApks() {
+        val outputDirectory = outputApkDirectory.get().asFile
+        outputDirectory.listFiles()?.forEach { it.deleteRecursively() }
+        outputDirectory.mkdirs()
+        transformationRequest.get().submit(this) { builtArtifact ->
+            val abiName = builtArtifact.filters
+                .firstOrNull { it.filterType == FilterConfiguration.FilterType.ABI }
+                ?.identifier
+                ?: "universal"
+            val outputFile = File(
+                outputDirectory,
+                "beastlocator_${apkVersionLabel.get()}_${abiName}.apk"
+            )
+            File(builtArtifact.outputFile).copyTo(outputFile, overwrite = true)
+            outputFile
+        }
+    }
 }
 
 plugins {
@@ -29,7 +74,58 @@ plugins {
 }
 
 val appCodeName = "NKTIDKSG"
-val appVersionName = "1.0.0-RC1"
+val appVersionName = "1.0.0-IntDev_RC1_rev0"
+
+val apkChannelPrefixRegex = Regex(
+    "^(IntDev|Internal|PreRelease|Beta|Alpha|RC|Stable|Release)",
+    RegexOption.IGNORE_CASE
+)
+val apkUnsafeCharactersRegex = Regex("[^a-z0-9]+")
+
+fun createApkVersionLabel(versionName: String): String {
+    val numericVersion = versionName.substringBefore('-').filter(Char::isDigit)
+    require(numericVersion.isNotBlank()) {
+        "APK filename requires a numeric version: $versionName"
+    }
+
+    val qualifier = versionName.substringAfter('-', missingDelimiterValue = "").trim()
+    if (qualifier.isBlank()) return "v$numericVersion"
+
+    val knownChannel = apkChannelPrefixRegex.find(qualifier)
+    val rawChannel: String
+    val rawSuffix: String
+    if (knownChannel != null) {
+        rawChannel = knownChannel.value
+        rawSuffix = qualifier.drop(knownChannel.value.length)
+    } else {
+        val separatorIndex = qualifier.indexOfFirst { it == '_' || it == '-' || it == '.' }
+        rawChannel = if (separatorIndex >= 0) qualifier.take(separatorIndex) else qualifier
+        rawSuffix = if (separatorIndex >= 0) qualifier.drop(separatorIndex) else ""
+    }
+
+    val channel = rawChannel.lowercase(Locale.ROOT)
+        .replace(apkUnsafeCharactersRegex, "")
+    require(channel.isNotBlank()) {
+        "APK filename requires a channel after the version: $versionName"
+    }
+    val suffix = rawSuffix
+        .trimStart('_', '-', '.')
+        .lowercase(Locale.ROOT)
+        .replace(apkUnsafeCharactersRegex, "_")
+        .trim('_')
+
+    return buildString {
+        append('v')
+        append(numericVersion)
+        append(channel)
+        if (suffix.isNotBlank()) {
+            append('_')
+            append(suffix)
+        }
+    }
+}
+
+val generatedApkVersionLabel = createApkVersionLabel(appVersionName)
 val buildNumberFiles = (
     fileTree("src") { exclude("**/build/**") }.files + listOf(
         project.file("build.gradle.kts"),
@@ -321,6 +417,15 @@ android {
         }
     }
 
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+            isUniversalApk = true
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -334,6 +439,23 @@ androidComponents {
             generateOssLicensesAutoJson,
             GenerateOssAssetsTask::outputDirectory
         )
+        val taskSuffix = variant.name.replaceFirstChar { char ->
+            if (char.isLowerCase()) char.titlecase(Locale.ROOT) else char.toString()
+        }
+        val renameApksTask = tasks.register<RenameApkOutputsTask>(
+            "rename${taskSuffix}ApkOutputs"
+        ) {
+            apkVersionLabel.set(generatedApkVersionLabel)
+        }
+        val transformationRequest = variant.artifacts.use(renameApksTask)
+            .wiredWithDirectories(
+                RenameApkOutputsTask::inputApkDirectory,
+                RenameApkOutputsTask::outputApkDirectory
+            )
+            .toTransformMany(SingleArtifact.APK)
+        renameApksTask.configure {
+            this.transformationRequest.set(transformationRequest)
+        }
     }
 }
 
@@ -345,6 +467,8 @@ dependencies {
     implementation("androidx.activity:activity-ktx:1.13.0")
     implementation("androidx.work:work-runtime:2.11.2")
     implementation("com.google.android.gms:play-services-location:21.3.0")
+    implementation("org.maplibre.gl:android-sdk-opengl:13.4.1")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("io.noties.markwon:core:4.6.2")
     implementation("io.noties.markwon:ext-tables:4.6.2")
     testImplementation("junit:junit:4.13.2")

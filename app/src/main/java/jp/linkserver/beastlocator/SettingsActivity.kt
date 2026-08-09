@@ -1,8 +1,11 @@
 package jp.linkserver.beastlocator
 
+import android.app.Activity
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.text.InputType
+import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
@@ -11,11 +14,14 @@ import android.widget.RadioGroup
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.widget.doAfterTextChanged
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.materialswitch.MaterialSwitch
+import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.asin
@@ -26,6 +32,7 @@ import kotlin.math.sin
 class SettingsActivity : AppCompatActivity() {
     private lateinit var store: DestinationStore
     private lateinit var fixedDestinationValue: TextView
+    private lateinit var editDestinationButton: Button
     private lateinit var debugRevisionValue: TextView
     private lateinit var debugDestinationValue: TextView
     private lateinit var debugSection: LinearLayout
@@ -37,6 +44,17 @@ class SettingsActivity : AppCompatActivity() {
     private var isSyncingBackgroundLocationUpdateSwitch = false
     private val reverseGeocodeGeneration = AtomicInteger(0)
     private var reverseGeocodeRequest: ReverseGeocoder.Request? = null
+    private val destinationPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode != Activity.RESULT_OK) return@registerForActivityResult
+        val data = result.data ?: return@registerForActivityResult
+        val destination = Destination(
+            data.getDoubleExtra(DestinationPickerActivity.EXTRA_LATITUDE, Double.NaN),
+            data.getDoubleExtra(DestinationPickerActivity.EXTRA_LONGITUDE, Double.NaN)
+        )
+        applyUserDestination(destination)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -49,6 +67,7 @@ class SettingsActivity : AppCompatActivity() {
 
         store = DestinationStore(this)
         fixedDestinationValue = findViewById(R.id.fixedDestinationValue)
+        editDestinationButton = findViewById(R.id.editDestinationButton)
         debugRevisionValue = findViewById(R.id.debugRevisionValue)
         debugDestinationValue = findViewById(R.id.debugDestinationValue)
         liveUpdateStartDistanceTitle = findViewById(R.id.liveUpdateStartDistanceTitle)
@@ -103,6 +122,10 @@ class SettingsActivity : AppCompatActivity() {
         configureIntDevUpdateTesting(currentVersionName)
 
         refreshDestinationLabels()
+        syncDestinationEditingUi()
+        editDestinationButton.setOnClickListener {
+            showUserDestinationInputDialog()
+        }
 
         val initialLiveUpdateStartDistance = store.getLiveUpdateStartDistanceMeters()
             .coerceIn(LIVE_UPDATE_START_MIN_METERS, LIVE_UPDATE_START_MAX_METERS)
@@ -301,6 +324,8 @@ class SettingsActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        refreshDestinationLabels()
+        syncDestinationEditingUi()
         applyDebugMenuAccessPolicy()
         syncBackgroundLocationUpdateToggleUi(
             findViewById(R.id.backgroundLocationUpdateSwitch),
@@ -424,6 +449,128 @@ class SettingsActivity : AppCompatActivity() {
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
+    }
+
+    private fun showUserDestinationInputDialog() {
+        if (!store.isExperimentalDestinationEditingEnabled()) {
+            Toast.makeText(this, R.string.destination_editing_disabled, Toast.LENGTH_SHORT).show()
+            syncDestinationEditingUi()
+            return
+        }
+
+        // Debug overrides are temporary diagnostics and must not become a saved user destination
+        // merely by opening this dialog and tapping Save.
+        val currentDestination = store.getUserDestination() ?: store.getDefaultDestination()
+        val content = layoutInflater.inflate(R.layout.dialog_edit_destination, null)
+        val latitudeLayout = content.findViewById<TextInputLayout>(R.id.destinationLatitudeLayout)
+        val longitudeLayout = content.findViewById<TextInputLayout>(R.id.destinationLongitudeLayout)
+        val latitudeInput = content.findViewById<TextInputEditText>(R.id.destinationLatitudeInput)
+        val longitudeInput = content.findViewById<TextInputEditText>(R.id.destinationLongitudeInput)
+        val resetButton = content.findViewById<Button>(R.id.resetDestinationButton)
+
+        // Double.toString is locale-independent and round-trips the exact stored value. This
+        // prevents a map-selected coordinate from becoming a false change through UI rounding.
+        latitudeInput.setText(currentDestination.lat.toString())
+        longitudeInput.setText(currentDestination.lng.toString())
+        resetButton.visibility = if (store.hasUserDestination()) View.VISIBLE else View.GONE
+
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.edit_destination_title)
+            .setMessage(R.string.edit_destination_message)
+            .setView(content)
+            .setPositiveButton(R.string.edit_destination_save, null)
+            .setNeutralButton(R.string.edit_destination_choose_map, null)
+            .setNegativeButton(android.R.string.cancel, null)
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                latitudeLayout.error = null
+                longitudeLayout.error = null
+                val latitude = DestinationInputParser.parseLatitude(
+                    latitudeInput.text?.toString().orEmpty()
+                )
+                val longitude = DestinationInputParser.parseLongitude(
+                    longitudeInput.text?.toString().orEmpty()
+                )
+                if (latitude == null || longitude == null) {
+                    latitudeLayout.error = if (latitude == null) {
+                        getString(R.string.manual_destination_lat_invalid)
+                    } else {
+                        null
+                    }
+                    longitudeLayout.error = if (longitude == null) {
+                        getString(R.string.manual_destination_lng_invalid)
+                    } else {
+                        null
+                    }
+                    return@setOnClickListener
+                }
+                applyUserDestination(Destination(latitude, longitude))
+                dialog.dismiss()
+            }
+            dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                dialog.dismiss()
+                launchDestinationPicker(currentDestination)
+            }
+            resetButton.setOnClickListener {
+                val result = DestinationChangeCoordinator.resetUserDestination(this)
+                handleDestinationUpdateResult(result, reset = true)
+                dialog.dismiss()
+            }
+        }
+        dialog.show()
+    }
+
+    private fun launchDestinationPicker(initialDestination: Destination) {
+        val intent = Intent(this, DestinationPickerActivity::class.java)
+            .putExtra(DestinationPickerActivity.EXTRA_LATITUDE, initialDestination.lat)
+            .putExtra(DestinationPickerActivity.EXTRA_LONGITUDE, initialDestination.lng)
+        destinationPickerLauncher.launch(intent)
+    }
+
+    private fun applyUserDestination(destination: Destination) {
+        val result = DestinationChangeCoordinator.setUserDestination(this, destination)
+        handleDestinationUpdateResult(result, reset = false)
+    }
+
+    private fun handleDestinationUpdateResult(result: DestinationUpdateResult, reset: Boolean) {
+        when (result) {
+            DestinationUpdateResult.DISABLED -> {
+                Toast.makeText(this, R.string.destination_editing_disabled, Toast.LENGTH_SHORT).show()
+                syncDestinationEditingUi()
+                return
+            }
+
+            DestinationUpdateResult.INVALID -> {
+                Toast.makeText(this, R.string.manual_destination_invalid, Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            DestinationUpdateResult.UNCHANGED -> {
+                Toast.makeText(this, R.string.edit_destination_unchanged, Toast.LENGTH_SHORT).show()
+            }
+
+            DestinationUpdateResult.UPDATED -> {
+                Toast.makeText(
+                    this,
+                    if (reset) R.string.edit_destination_reset_done else R.string.edit_destination_saved,
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+        refreshDestinationLabels()
+        if (!store.isDestinationAnswered()) {
+            ForegroundAppLocationMonitor.start(applicationContext)
+        }
+    }
+
+    private fun syncDestinationEditingUi() {
+        editDestinationButton.visibility = if (store.isExperimentalDestinationEditingEnabled()) {
+            View.VISIBLE
+        } else {
+            View.GONE
+        }
     }
 
     private fun showDebugDistanceInputDialog() {

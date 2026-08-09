@@ -43,7 +43,54 @@ class DestinationStore(context: Context) {
                 java.lang.Double.longBitsToDouble(runtimePrefs.getLong(KEY_DEBUG_DEST_OVERRIDE_LNG, 0L))
             )
         }
-        return getDefaultDestination()
+        return getUserDestination() ?: getDefaultDestination()
+    }
+
+    fun getUserDestination(): Destination? {
+        if (!prefs.contains(KEY_USER_DESTINATION_LAT) ||
+            !prefs.contains(KEY_USER_DESTINATION_LNG)
+        ) {
+            return null
+        }
+        return Destination(
+            java.lang.Double.longBitsToDouble(prefs.getLong(KEY_USER_DESTINATION_LAT, 0L)),
+            java.lang.Double.longBitsToDouble(prefs.getLong(KEY_USER_DESTINATION_LNG, 0L))
+        ).takeIf { it.isValidCoordinate() }
+    }
+
+    fun hasUserDestination(): Boolean = getUserDestination() != null
+
+    /**
+     * Stores the user-selected destination and returns whether the effective destination changed.
+     * A development override remains authoritative while it is enabled.
+     */
+    internal fun setUserDestination(destination: Destination): Boolean {
+        if (!destination.isValidCoordinate()) return false
+        val previous = getDestination()
+        prefs.edit()
+            .putLong(KEY_USER_DESTINATION_LAT, java.lang.Double.doubleToRawLongBits(destination.lat))
+            .putLong(KEY_USER_DESTINATION_LNG, java.lang.Double.doubleToRawLongBits(destination.lng))
+            .apply()
+        val changed = getDestination() != previous
+        if (changed) resetRuntimeForDestinationChange()
+        return changed
+    }
+
+    /** Clears the user selection and returns whether the effective destination changed. */
+    internal fun clearUserDestination(): Boolean {
+        if (!prefs.contains(KEY_USER_DESTINATION_LAT) &&
+            !prefs.contains(KEY_USER_DESTINATION_LNG)
+        ) {
+            return false
+        }
+        val previous = getDestination()
+        prefs.edit()
+            .remove(KEY_USER_DESTINATION_LAT)
+            .remove(KEY_USER_DESTINATION_LNG)
+            .apply()
+        val changed = getDestination() != previous
+        if (changed) resetRuntimeForDestinationChange()
+        return changed
     }
 
     fun setDestination(destination: Destination) {
@@ -322,6 +369,15 @@ class DestinationStore(context: Context) {
 
     fun setLandOnlyDestinationEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_LAND_ONLY_DESTINATION_ENABLED, enabled).apply()
+    }
+
+    fun isExperimentalDestinationEditingEnabled(): Boolean =
+        prefs.getBoolean(KEY_EXPERIMENTAL_DESTINATION_EDITING_ENABLED, false)
+
+    fun setExperimentalDestinationEditingEnabled(enabled: Boolean) {
+        prefs.edit()
+            .putBoolean(KEY_EXPERIMENTAL_DESTINATION_EDITING_ENABLED, enabled)
+            .apply()
     }
 
     fun isDistanceMaskButtonVisible(): Boolean =
@@ -636,11 +692,29 @@ class DestinationStore(context: Context) {
         return if (normalized < 0f) normalized + 360f else normalized
     }
 
+    private fun resetRuntimeForDestinationChange() {
+        val nextGeneration = getDestinationGeneration() + 1L
+        runtimePrefs.edit()
+            .putBoolean(KEY_DEST_ANSWERED, false)
+            .putBoolean(KEY_ARRIVAL_REARM_REQUIRED, false)
+            .remove(KEY_LIVE_UPDATE_ANCHOR_DISTANCE_METERS)
+            .remove(KEY_ARRIVAL_DESTINATION_NAME)
+            .remove(KEY_ARRIVAL_DESTINATION_NAME_RESOLVED)
+            .remove(KEY_REGISTERED_GEOFENCE_LAT)
+            .remove(KEY_REGISTERED_GEOFENCE_LNG)
+            .putLong(KEY_DESTINATION_GENERATION, nextGeneration)
+            .apply()
+        SharedArrivalConfirmation.reset()
+        DistanceEventProcessor.reset(nextGeneration)
+    }
+
     companion object {
         private const val LEGACY_PREFS_NAME = "destination_store"
         private const val SETTINGS_PREFS_NAME = "destination_settings"
         private const val RUNTIME_PREFS_NAME = "destination_runtime"
         private const val KEY_RADIUS_KM = "radius_km"
+        private const val KEY_USER_DESTINATION_LAT = "user_destination_lat"
+        private const val KEY_USER_DESTINATION_LNG = "user_destination_lng"
         private const val KEY_DEBUG_DEST_OVERRIDE_ENABLED = "debug_dest_override_enabled"
         private const val KEY_DEBUG_DEST_OVERRIDE_LAT = "debug_dest_override_lat"
         private const val KEY_DEBUG_DEST_OVERRIDE_LNG = "debug_dest_override_lng"
@@ -662,6 +736,8 @@ class DestinationStore(context: Context) {
         private const val KEY_WIDGET_BEARING_MODE = "widget_bearing_mode"
         private const val KEY_LEGACY_COMPASS_MODE_ENABLED = "legacy_compass_mode_enabled"
         private const val KEY_LAND_ONLY_DESTINATION_ENABLED = "land_only_destination_enabled"
+        private const val KEY_EXPERIMENTAL_DESTINATION_EDITING_ENABLED =
+            "experimental_destination_editing_enabled"
         private const val KEY_DISTANCE_MASK_BUTTON_VISIBLE = "distance_mask_button_visible"
         private const val KEY_MANUAL_DISTANCE_MASK_ENABLED = "manual_distance_mask_enabled"
         private const val KEY_SCREENSHOT_WARNING_ENABLED = "screenshot_warning_enabled"
@@ -722,6 +798,8 @@ class DestinationStore(context: Context) {
         )
         private val BACKUP_SAFE_SETTING_KEYS = setOf(
             KEY_RADIUS_KM,
+            KEY_USER_DESTINATION_LAT,
+            KEY_USER_DESTINATION_LNG,
             KEY_LIVE_UPDATE_ENABLED,
             KEY_LIVE_UPDATE_START_DISTANCE_METERS,
             KEY_ARRIVAL_NOTIFICATION_ENABLED,
@@ -729,6 +807,7 @@ class DestinationStore(context: Context) {
             KEY_WIDGET_BEARING_MODE,
             KEY_LEGACY_COMPASS_MODE_ENABLED,
             KEY_LAND_ONLY_DESTINATION_ENABLED,
+            KEY_EXPERIMENTAL_DESTINATION_EDITING_ENABLED,
             KEY_DISTANCE_MASK_BUTTON_VISIBLE,
             KEY_MANUAL_DISTANCE_MASK_ENABLED,
             KEY_SCREENSHOT_WARNING_ENABLED,
