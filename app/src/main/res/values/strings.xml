@@ -131,12 +131,12 @@
     <string name="destination_search_in_progress">位置を検索しています</string>
     <string name="destination_search_no_results">位置を見つけられませんでした。別の名称をお試しください</string>
     <string name="destination_search_failed">位置を検索できませんでした。通信状態を確認するか、緯度・経度で指定してください</string>
-    <string name="destination_search_results_title">検索結果</string>
     <string name="destination_current_location">現在地へ移動</string>
     <string name="destination_current_location_unavailable">利用できる現在地がありません</string>
     <string name="destination_use_this_location">この位置に設定</string>
     <string name="destination_selected_format">緯度 %1$s / 経度 %2$s</string>
     <string name="destination_editing_disabled">実験的機能の「目的地編集」を有効にしてください</string>
+    <string name="destination_map_load_failed">地図を読み込めませんでした。通信状態を確認してもう一度お試しください</string>
     <string name="osm_attribution">© OpenStreetMap contributors</string>
     <string name="osm_attribution_url" translatable="false">https://www.openstreetmap.org/copyright</string>
     <string name="osm_attribution_html" translatable="false">&lt;a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors&lt;/a></string>

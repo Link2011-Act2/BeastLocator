@@ -11,11 +11,13 @@ import java.util.TimeZone
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 import org.gradle.api.artifacts.result.ResolvedArtifactResult
 import org.gradle.api.DefaultTask
+import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.provider.Property
 import org.gradle.maven.MavenModule
 import org.gradle.maven.MavenPomArtifact
 import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.OutputDirectory
@@ -25,8 +27,8 @@ import org.gradle.api.tasks.TaskAction
 import java.util.zip.ZipFile
 import javax.xml.XMLConstants
 import javax.xml.parsers.DocumentBuilderFactory
-import com.android.build.api.artifact.ArtifactTransformationRequest
 import com.android.build.api.artifact.SingleArtifact
+import com.android.build.api.variant.BuiltArtifactsLoader
 import com.android.build.api.variant.FilterConfiguration
 
 abstract class GenerateOssAssetsTask : DefaultTask() {
@@ -35,7 +37,7 @@ abstract class GenerateOssAssetsTask : DefaultTask() {
 }
 
 abstract class RenameApkOutputsTask : DefaultTask() {
-    @get:InputFiles
+    @get:InputDirectory
     @get:PathSensitive(PathSensitivity.RELATIVE)
     abstract val inputApkDirectory: DirectoryProperty
 
@@ -46,15 +48,19 @@ abstract class RenameApkOutputsTask : DefaultTask() {
     abstract val apkVersionLabel: Property<String>
 
     @get:Internal
-    abstract val transformationRequest:
-        Property<ArtifactTransformationRequest<RenameApkOutputsTask>>
+    abstract val builtArtifactsLoader: Property<BuiltArtifactsLoader>
 
     @TaskAction
     fun renameApks() {
+        val builtArtifacts = builtArtifactsLoader.get().load(inputApkDirectory.get())
+            ?: error("Unable to read APK artifacts from ${inputApkDirectory.get().asFile}")
+        require(builtArtifacts.elements.isNotEmpty()) {
+            "No APK artifacts were produced for this variant."
+        }
         val outputDirectory = outputApkDirectory.get().asFile
         outputDirectory.listFiles()?.forEach { it.deleteRecursively() }
         outputDirectory.mkdirs()
-        transformationRequest.get().submit(this) { builtArtifact ->
+        builtArtifacts.elements.forEach { builtArtifact ->
             val abiName = builtArtifact.filters
                 .firstOrNull { it.filterType == FilterConfiguration.FilterType.ABI }
                 ?.identifier
@@ -64,7 +70,48 @@ abstract class RenameApkOutputsTask : DefaultTask() {
                 "beastlocator_${apkVersionLabel.get()}_${abiName}.apk"
             )
             File(builtArtifact.outputFile).copyTo(outputFile, overwrite = true)
-            outputFile
+        }
+    }
+}
+
+abstract class ExtractLeafletAssetsTask : DefaultTask() {
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val webJars: ConfigurableFileCollection
+
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+
+    @TaskAction
+    fun extractAssets() {
+        val webJar = webJars.singleFile
+        val outputRoot = outputDirectory.get().asFile
+        outputRoot.listFiles()?.forEach { it.deleteRecursively() }
+        outputRoot.mkdirs()
+
+        ZipFile(webJar).use { zip ->
+            zip.entries().asSequence()
+                .filterNot { it.isDirectory }
+                .forEach { entry ->
+                    val relativePath = entry.name.substringAfter("/dist/", missingDelimiterValue = "")
+                    val shouldExtract = relativePath == "leaflet.js" ||
+                        relativePath == "leaflet.css" ||
+                        relativePath.startsWith("images/")
+                    if (!shouldExtract || relativePath.contains("..")) return@forEach
+
+                    val outputFile = File(outputRoot, "leaflet/$relativePath")
+                    outputFile.parentFile.mkdirs()
+                    zip.getInputStream(entry).use { input ->
+                        outputFile.outputStream().use(input::copyTo)
+                    }
+                }
+        }
+
+        require(File(outputRoot, "leaflet/leaflet.js").isFile) {
+            "Leaflet JavaScript was not found in ${webJar.name}"
+        }
+        require(File(outputRoot, "leaflet/leaflet.css").isFile) {
+            "Leaflet CSS was not found in ${webJar.name}"
         }
     }
 }
@@ -74,7 +121,18 @@ plugins {
 }
 
 val appCodeName = "NKTIDKSG"
-val appVersionName = "1.0.0-IntDev_RC1_rev0"
+val appVersionName = "1.0.0-RC1"
+val leafletAssetsConfiguration = configurations.create("leafletAssets") {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+    isTransitive = false
+}
+
+val generatedLeafletAssetsDir = layout.buildDirectory.dir("generated/leaflet-assets")
+val extractLeafletAssets = tasks.register<ExtractLeafletAssetsTask>("extractLeafletAssets") {
+    webJars.from(leafletAssetsConfiguration)
+    outputDirectory.set(generatedLeafletAssetsDir)
+}
 
 val apkChannelPrefixRegex = Regex(
     "^(IntDev|Internal|PreRelease|Beta|Alpha|RC|Stable|Release)",
@@ -248,8 +306,14 @@ fun readNoticeOrLicenseText(artifactFile: File): String? {
     )
     return runCatching {
         ZipFile(artifactFile).use { zip ->
-            candidateNames.firstNotNullOfOrNull { name ->
-                val entry = zip.getEntry(name) ?: return@firstNotNullOfOrNull null
+            val entry = candidateNames.firstNotNullOfOrNull(zip::getEntry)
+                ?: zip.entries().asSequence().firstOrNull { candidate ->
+                    !candidate.isDirectory &&
+                        candidate.name.contains("/leaflet/") &&
+                        candidate.name.substringAfterLast('/').lowercase(Locale.ROOT) in
+                        setOf("license", "license.txt", "license.md")
+                }
+            entry?.let {
                 zip.getInputStream(entry).bufferedReader(StandardCharsets.UTF_8).use { reader ->
                     reader.readText().takeIf { it.isNotBlank() }
                 }
@@ -282,6 +346,7 @@ fun resolveDisplayTitle(group: String, name: String): String {
         group == "com.google.android.material" && name == "material" -> "Material Components for Android"
         group.startsWith("org.jetbrains.kotlin") && name.startsWith("kotlin-stdlib") -> "Kotlin Standard Library"
         group == "com.google.android.gms" && name == "play-services-location" -> "Google Play services Location"
+        group == "org.webjars.npm" && name == "leaflet" -> "Leaflet"
         group.startsWith("androidx.") -> "AndroidX ${prettifyArtifactName(name)}"
         else -> prettifyArtifactName(name)
     }
@@ -402,7 +467,7 @@ android {
         applicationId = "jp.linkserver.beastlocator"
         minSdk = 26
         targetSdk = 36
-        versionCode = 202607311   // 2026, 07, 29, 1(年、月、日、その日のうちの何個目)
+        versionCode = 202608091   // 2026, 08, 09, 1(年、月、日、その日のうちの何個目)
         versionName = appVersionName
         buildConfigField("String", "BUILD_NUMBER", "\"$generatedBuildNumber\"")
     }
@@ -417,13 +482,12 @@ android {
         }
     }
 
-    splits {
-        abi {
-            isEnable = true
-            reset()
-            include("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
-            isUniversalApk = true
-        }
+    packaging {
+        resources.excludes += "META-INF/resources/webjars/leaflet/**"
+    }
+
+    sourceSets.getByName("main") {
+        kotlin.directories.add("src/main/java")
     }
 
     compileOptions {
@@ -439,22 +503,25 @@ androidComponents {
             generateOssLicensesAutoJson,
             GenerateOssAssetsTask::outputDirectory
         )
+        variant.sources.assets?.addGeneratedSourceDirectory(
+            extractLeafletAssets,
+            ExtractLeafletAssetsTask::outputDirectory
+        )
         val taskSuffix = variant.name.replaceFirstChar { char ->
             if (char.isLowerCase()) char.titlecase(Locale.ROOT) else char.toString()
         }
         val renameApksTask = tasks.register<RenameApkOutputsTask>(
             "rename${taskSuffix}ApkOutputs"
         ) {
-            apkVersionLabel.set(generatedApkVersionLabel)
-        }
-        val transformationRequest = variant.artifacts.use(renameApksTask)
-            .wiredWithDirectories(
-                RenameApkOutputsTask::inputApkDirectory,
-                RenameApkOutputsTask::outputApkDirectory
+            inputApkDirectory.set(variant.artifacts.get(SingleArtifact.APK))
+            outputApkDirectory.set(
+                layout.buildDirectory.dir("outputs/named-apk/${variant.name}")
             )
-            .toTransformMany(SingleArtifact.APK)
-        renameApksTask.configure {
-            this.transformationRequest.set(transformationRequest)
+            apkVersionLabel.set(generatedApkVersionLabel)
+            builtArtifactsLoader.set(variant.artifacts.getBuiltArtifactsLoader())
+        }
+        tasks.matching { task -> task.name == "assemble$taskSuffix" }.configureEach {
+            dependsOn(renameApksTask)
         }
     }
 }
@@ -467,8 +534,10 @@ dependencies {
     implementation("androidx.activity:activity-ktx:1.13.0")
     implementation("androidx.work:work-runtime:2.11.2")
     implementation("com.google.android.gms:play-services-location:21.3.0")
-    implementation("org.maplibre.gl:android-sdk-opengl:13.4.1")
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("org.webjars.npm:leaflet:1.9.4") {
+        isTransitive = false
+    }
+    add("leafletAssets", "org.webjars.npm:leaflet:1.9.4")
     implementation("io.noties.markwon:core:4.6.2")
     implementation("io.noties.markwon:ext-tables:4.6.2")
     testImplementation("junit:junit:4.13.2")

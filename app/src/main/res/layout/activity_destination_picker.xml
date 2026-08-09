@@ -41,15 +41,11 @@
     </LinearLayout>
 
     <FrameLayout
+        android:id="@+id/destinationMapContainer"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1.2"
         android:minHeight="120dp">
-
-        <org.maplibre.android.maps.MapView
-            android:id="@+id/destinationMapView"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent" />
 
         <ImageView
             android:layout_width="52dp"

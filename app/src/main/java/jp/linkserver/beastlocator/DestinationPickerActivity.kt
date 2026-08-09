@@ -7,36 +7,24 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.net.toUri
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import org.maplibre.android.MapLibre
-import org.maplibre.android.camera.CameraPosition
-import org.maplibre.android.camera.CameraUpdateFactory
-import org.maplibre.android.geometry.LatLng
-import org.maplibre.android.maps.MapView
-import org.maplibre.android.maps.MapLibreMap
-import org.maplibre.android.maps.Style
-import org.maplibre.android.style.layers.RasterLayer
-import org.maplibre.android.style.sources.RasterSource
-import org.maplibre.android.style.sources.TileSet
 import java.util.Locale
 
-class DestinationPickerActivity : AppCompatActivity() {
-    private lateinit var mapView: MapView
+class DestinationPickerActivity : AppCompatActivity(), DestinationMapController.Listener {
+    private lateinit var mapController: DestinationMapController
     private lateinit var selectedCoordinatesView: TextView
     private lateinit var searchInput: EditText
     private lateinit var searchButton: Button
     private lateinit var searchProgress: ProgressBar
     private lateinit var confirmButton: Button
-    private var map: MapLibreMap? = null
     private var selectedDestination = Destination(DEFAULT_LATITUDE, DEFAULT_LONGITUDE)
     private var searchRequest: ForwardGeocoder.Request? = null
-    private var restoreMapCamera = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -48,7 +36,6 @@ class DestinationPickerActivity : AppCompatActivity() {
         }
 
         val initialDestination = readInitialDestination(store)
-        restoreMapCamera = savedInstanceState?.getBoolean(STATE_HAS_CAMERA, false) == true
         selectedDestination = savedInstanceState?.let {
             Destination(
                 it.getDouble(STATE_LATITUDE, initialDestination.lat),
@@ -56,12 +43,9 @@ class DestinationPickerActivity : AppCompatActivity() {
             )
         }?.takeIf { it.isValidCoordinate() } ?: initialDestination
 
-        MapLibre.getInstance(applicationContext)
-        MapHttpConfiguration.configureOnce()
         setContentView(R.layout.activity_destination_picker)
         SystemBarInsetApplier.apply(findViewById(R.id.destinationPickerRoot))
 
-        mapView = findViewById(R.id.destinationMapView)
         selectedCoordinatesView = findViewById(R.id.selectedCoordinatesView)
         searchInput = findViewById(R.id.destinationSearchInput)
         searchButton = findViewById(R.id.destinationSearchButton)
@@ -99,65 +83,57 @@ class DestinationPickerActivity : AppCompatActivity() {
             }
         }
         confirmButton.isEnabled = false
-        confirmButton.setOnClickListener {
-            if (!DestinationStore(this).isExperimentalDestinationEditingEnabled()) {
-                Toast.makeText(this, R.string.destination_editing_disabled, Toast.LENGTH_SHORT).show()
-                finish()
-                return@setOnClickListener
-            }
-            val target = map?.cameraPosition?.target
-            val destination = target?.let { Destination(it.latitude, it.longitude) }
-                ?.takeIf { it.isValidCoordinate() }
-                ?: selectedDestination
+        confirmButton.setOnClickListener { confirmSelectedDestination() }
+
+        updateSelectedCoordinates()
+        mapController = DestinationMapControllerFactory.create(this)
+        mapController.attach(
+            container = findViewById<FrameLayout>(R.id.destinationMapContainer),
+            savedInstanceState = savedInstanceState,
+            initialDestination = selectedDestination,
+            initialZoom = DEFAULT_ZOOM,
+            listener = this
+        )
+    }
+
+    override fun onReady(destination: Destination) {
+        if (!destination.isValidCoordinate()) return
+        selectedDestination = destination
+        updateSelectedCoordinates()
+        confirmButton.isEnabled = true
+    }
+
+    override fun onMoveStarted() {
+        confirmButton.isEnabled = false
+    }
+
+    override fun onMoveFinished(destination: Destination) {
+        if (!destination.isValidCoordinate()) return
+        selectedDestination = destination
+        updateSelectedCoordinates()
+        confirmButton.isEnabled = true
+    }
+
+    override fun onLoadFailed() {
+        confirmButton.isEnabled = false
+        Toast.makeText(this, R.string.destination_map_load_failed, Toast.LENGTH_LONG).show()
+    }
+
+    private fun confirmSelectedDestination() {
+        if (!DestinationStore(this).isExperimentalDestinationEditingEnabled()) {
+            Toast.makeText(this, R.string.destination_editing_disabled, Toast.LENGTH_SHORT).show()
+            finish()
+            return
+        }
+        confirmButton.isEnabled = false
+        mapController.readCenter { center ->
+            if (isFinishing || isDestroyed) return@readCenter
+            val destination = center?.takeIf { it.isValidCoordinate() } ?: selectedDestination
             val result = Intent()
                 .putExtra(EXTRA_LATITUDE, destination.lat)
                 .putExtra(EXTRA_LONGITUDE, destination.lng)
             setResult(Activity.RESULT_OK, result)
             finish()
-        }
-
-        updateSelectedCoordinates()
-        mapView.onCreate(savedInstanceState)
-        mapView.getMapAsync(::configureMap)
-    }
-
-    private fun configureMap(loadedMap: MapLibreMap) {
-        map = loadedMap
-        loadedMap.setPrefetchZoomDelta(0)
-
-        val tileSet = TileSet(MAP_TILESET_VERSION, getString(R.string.osm_tile_url)).apply {
-            scheme = "xyz"
-            attribution = getString(R.string.osm_attribution_html)
-            setMinZoom(0f)
-            setMaxZoom(19f)
-        }
-        val source = RasterSource(OSM_SOURCE_ID, tileSet, 256).apply {
-            setVolatile(false)
-        }
-        loadedMap.setStyle(
-            Style.Builder()
-                .withSource(source)
-                .withLayer(RasterLayer(OSM_LAYER_ID, OSM_SOURCE_ID))
-        ) {
-            if (!restoreMapCamera) {
-                loadedMap.cameraPosition = CameraPosition.Builder()
-                    .target(LatLng(selectedDestination.lat, selectedDestination.lng))
-                    .zoom(DEFAULT_ZOOM)
-                    .build()
-            }
-            confirmButton.isEnabled = true
-        }
-        loadedMap.addOnCameraIdleListener {
-            val target = loadedMap.cameraPosition.target ?: return@addOnCameraIdleListener
-            val candidate = Destination(target.latitude, target.longitude)
-            if (candidate.isValidCoordinate()) {
-                selectedDestination = candidate
-                updateSelectedCoordinates()
-                confirmButton.isEnabled = true
-            }
-        }
-        loadedMap.addOnCameraMoveStartedListener {
-            confirmButton.isEnabled = false
         }
     }
 
@@ -189,13 +165,7 @@ class DestinationPickerActivity : AppCompatActivity() {
                 Toast.makeText(this, R.string.destination_search_no_results, Toast.LENGTH_LONG).show()
                 return@searchAsync
             }
-            MaterialAlertDialogBuilder(this)
-                .setTitle(R.string.destination_search_results_title)
-                .setItems(results.map { it.label }.toTypedArray()) { _, index ->
-                    results.getOrNull(index)?.let { moveMapTo(it.destination) }
-                }
-                .setNegativeButton(android.R.string.cancel, null)
-                .show()
+            moveMapTo(results.first().destination)
         }
     }
 
@@ -203,12 +173,7 @@ class DestinationPickerActivity : AppCompatActivity() {
         selectedDestination = destination
         updateSelectedCoordinates()
         confirmButton.isEnabled = false
-        map?.animateCamera(
-            CameraUpdateFactory.newLatLngZoom(
-                LatLng(destination.lat, destination.lng),
-                DEFAULT_ZOOM
-            )
-        )
+        mapController.moveTo(destination, DEFAULT_ZOOM)
     }
 
     private fun applySearchLoading(loading: Boolean) {
@@ -243,23 +208,22 @@ class DestinationPickerActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        if (::mapView.isInitialized) mapView.onStart()
+        if (::mapController.isInitialized) mapController.onStart()
     }
 
     override fun onResume() {
         super.onResume()
-        if (::mapView.isInitialized) {
-            mapView.onResume()
+        if (::mapController.isInitialized) {
+            mapController.onResume()
             if (!DestinationStore(this).isExperimentalDestinationEditingEnabled()) {
                 Toast.makeText(this, R.string.destination_editing_disabled, Toast.LENGTH_SHORT).show()
                 finish()
-                return
             }
         }
     }
 
     override fun onPause() {
-        if (::mapView.isInitialized) mapView.onPause()
+        if (::mapController.isInitialized) mapController.onPause()
         super.onPause()
     }
 
@@ -267,35 +231,26 @@ class DestinationPickerActivity : AppCompatActivity() {
         searchRequest?.cancel()
         searchRequest = null
         if (::searchProgress.isInitialized) applySearchLoading(false)
-        if (::mapView.isInitialized) mapView.onStop()
+        if (::mapController.isInitialized) mapController.onStop()
         super.onStop()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
-        map?.cameraPosition?.target?.let { target ->
-            val cameraDestination = Destination(target.latitude, target.longitude)
-            if (cameraDestination.isValidCoordinate()) {
-                selectedDestination = cameraDestination
-            }
-        }
         outState.putDouble(STATE_LATITUDE, selectedDestination.lat)
         outState.putDouble(STATE_LONGITUDE, selectedDestination.lng)
-        if (::mapView.isInitialized) {
-            outState.putBoolean(STATE_HAS_CAMERA, map != null)
-            mapView.onSaveInstanceState(outState)
-        }
+        if (::mapController.isInitialized) mapController.onSaveInstanceState(outState)
         super.onSaveInstanceState(outState)
     }
 
     override fun onLowMemory() {
         super.onLowMemory()
-        if (::mapView.isInitialized) mapView.onLowMemory()
+        if (::mapController.isInitialized) mapController.onLowMemory()
     }
 
     override fun onDestroy() {
         searchRequest?.cancel()
         searchRequest = null
-        if (::mapView.isInitialized) mapView.onDestroy()
+        if (::mapController.isInitialized) mapController.onDestroy()
         super.onDestroy()
     }
 
@@ -304,10 +259,6 @@ class DestinationPickerActivity : AppCompatActivity() {
         const val EXTRA_LONGITUDE = "destination_picker_longitude"
         private const val STATE_LATITUDE = "selected_latitude"
         private const val STATE_LONGITUDE = "selected_longitude"
-        private const val STATE_HAS_CAMERA = "has_saved_map_camera"
-        private const val OSM_SOURCE_ID = "osm-source"
-        private const val OSM_LAYER_ID = "osm-layer"
-        private const val MAP_TILESET_VERSION = "2.2.0"
         private const val DEFAULT_ZOOM = 15.0
         private const val DEFAULT_LATITUDE = 35.665554
         private const val DEFAULT_LONGITUDE = 139.669717
