@@ -147,16 +147,19 @@
     <string name="about_screen_title">このアプリについて</string>
     <string name="about_version_label" translatable="false">%1$s v%2$s (%3$d)</string>
     <string name="about_version_label_without_code" translatable="false">%1$s v%2$s</string>
+    <string name="about_version_channel_rc">リリース候補版</string>
     <string name="about_dev_channel_title">開発チャネル</string>
     <string name="about_dev_channel_dialog_title">開発チャネル: %1$s</string>
     <string name="about_dev_channel_value_intdev">内部検証版</string>
     <string name="about_dev_channel_value_beta">ベータ版</string>
     <string name="about_dev_channel_value_prerelease">プレリリース</string>
+    <string name="about_dev_channel_value_rc" translatable="false">RC</string>
     <string name="about_dev_channel_value_stable">安定版</string>
     <string name="about_dev_channel_value_unknown">不明</string>
     <string name="about_dev_channel_desc_intdev">IntDev は内部検証時に使用されます。開発者と一部のメンバーにのみ公開され、仕様変更や不安定な挙動が含まれる可能性があります。デバッグメニューが含まれています。</string>
     <string name="about_dev_channel_desc_dev">Beta はプレリリースのバージョンです。GitHubなどで公開されますが、不安定な挙動になる可能性があります。デバッグメニューが含まれています。</string>
     <string name="about_dev_channel_desc_prerelease">Pre-release は正式版の前に公開される検証版です。新機能を含むことがありますが、安定性は保証されません。</string>
+    <string name="about_dev_channel_desc_rc">RC は正式リリース候補版です。正式版に近い状態ですが、不具合や仕様変更が残っている可能性があります。</string>
     <string name="about_dev_channel_desc_stable">Stable は安定版で、すでにバグ検証などが十分に行われてから実装され、挙動が安定しています。開発者向け機能などは削除されています。</string>
     <string name="about_dev_channel_desc_unknown">このチャネルの説明は未登録です。</string>
     <string name="about_simple_version_title">バージョン</string>

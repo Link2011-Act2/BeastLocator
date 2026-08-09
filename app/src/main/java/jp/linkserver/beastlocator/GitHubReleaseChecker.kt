@@ -399,6 +399,7 @@ private fun detectChannel(value: String, isPrerelease: Boolean): ReleaseChannel 
 private fun channelPriority(channel: ReleaseChannel): Int = when (channel) {
     ReleaseChannel.INTDEV -> 0
     ReleaseChannel.PRE_RELEASE -> 1
+    ReleaseChannel.RC -> 1
     ReleaseChannel.BETA -> 2
     ReleaseChannel.RELEASE -> 3
     ReleaseChannel.UNKNOWN -> -1

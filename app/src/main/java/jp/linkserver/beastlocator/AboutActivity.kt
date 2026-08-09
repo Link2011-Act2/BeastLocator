@@ -27,9 +27,10 @@ class AboutActivity : AppCompatActivity() {
         val (simpleVersion, _) = splitVersionAndChannel(versionName)
         val channel = ReleaseChannelDetector.detect(versionName)
         val channelLabel = resolveChannelLabel(channel)
+        val versionChannelLabel = resolveVersionChannelLabel(channel, channelLabel)
         configureVersionSummary(
             findViewById(R.id.aboutVersionText),
-            channelLabel,
+            versionChannelLabel,
             versionName,
             versionCode,
         )
@@ -202,6 +203,7 @@ class AboutActivity : AppCompatActivity() {
             ReleaseChannel.INTDEV -> R.string.about_dev_channel_desc_intdev
             ReleaseChannel.BETA -> R.string.about_dev_channel_desc_dev
             ReleaseChannel.PRE_RELEASE -> R.string.about_dev_channel_desc_prerelease
+            ReleaseChannel.RC -> R.string.about_dev_channel_desc_rc
             ReleaseChannel.RELEASE -> R.string.about_dev_channel_desc_stable
             ReleaseChannel.UNKNOWN -> R.string.about_dev_channel_desc_unknown
         }
@@ -300,8 +302,18 @@ class AboutActivity : AppCompatActivity() {
             ReleaseChannel.INTDEV -> getString(R.string.about_dev_channel_value_intdev)
             ReleaseChannel.BETA -> getString(R.string.about_dev_channel_value_beta)
             ReleaseChannel.PRE_RELEASE -> getString(R.string.about_dev_channel_value_prerelease)
+            ReleaseChannel.RC -> getString(R.string.about_dev_channel_value_rc)
             ReleaseChannel.RELEASE -> getString(R.string.about_dev_channel_value_stable)
             ReleaseChannel.UNKNOWN -> getString(R.string.about_dev_channel_value_unknown)
         }
+    }
+
+    private fun resolveVersionChannelLabel(
+        channel: ReleaseChannel,
+        fallbackLabel: String,
+    ): String = if (channel == ReleaseChannel.RC) {
+        getString(R.string.about_version_channel_rc)
+    } else {
+        fallbackLabel
     }
 }

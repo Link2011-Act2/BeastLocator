@@ -245,6 +245,7 @@ class UpdateActivity : AppCompatActivity() {
         ReleaseChannel.INTDEV -> getString(R.string.about_dev_channel_value_intdev)
         ReleaseChannel.BETA -> getString(R.string.about_dev_channel_value_beta)
         ReleaseChannel.PRE_RELEASE -> getString(R.string.about_dev_channel_value_prerelease)
+        ReleaseChannel.RC -> getString(R.string.about_dev_channel_value_rc)
         ReleaseChannel.RELEASE -> getString(R.string.about_dev_channel_value_stable)
         ReleaseChannel.UNKNOWN -> getString(R.string.about_dev_channel_value_unknown)
     }

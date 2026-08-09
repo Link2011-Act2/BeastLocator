@@ -142,6 +142,7 @@
     <string name="about_section_help">显示应用信息和开源许可</string>
     <string name="about_section_open">显示</string>
     <string name="about_screen_title">关于本应用</string>
+    <string name="about_version_channel_rc">发布候选版</string>
     <string name="about_dev_channel_title">开发频道</string>
     <string name="about_dev_channel_dialog_title">开发频道: %1$s</string>
     <string name="about_dev_channel_value_intdev">内部验证版</string>
@@ -152,6 +153,7 @@
     <string name="about_dev_channel_desc_intdev">IntDev是用于内部验证的版本，仅对开发人员和部分成员开放，可能包含规格变更或不稳定的行为，并包括调试菜单</string>
     <string name="about_dev_channel_desc_dev">Beta是预发布版本，会在GitHub等平台公开，但可能会出现不稳定的行为，并包含调试菜单</string>
     <string name="about_dev_channel_desc_prerelease">Pre-release 是正式发布前的测试版本，可能包含新功能，但不保证稳定性。</string>
+    <string name="about_dev_channel_desc_rc">RC 是正式发布候选版本，已接近稳定版，但仍可能包含问题或规格变更。</string>
     <string name="about_dev_channel_desc_stable">Stable是稳定版，经过充分的错误验证后发布，运行稳定，已移除开发者功能等</string>
     <string name="about_dev_channel_desc_unknown">此频道的说明尚未注册</string>
     <string name="about_simple_version_title">版本</string>

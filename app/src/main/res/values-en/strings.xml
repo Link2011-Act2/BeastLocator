@@ -142,6 +142,7 @@
     <string name="about_section_help">View app information and OSS licenses</string>
     <string name="about_section_open">View</string>
     <string name="about_screen_title">About This App</string>
+    <string name="about_version_channel_rc">Release Candidate</string>
     <string name="about_dev_channel_title">Development Channel</string>
     <string name="about_dev_channel_dialog_title">Development Channel: %1$s</string>
     <string name="about_dev_channel_value_intdev">Internal Testing Build</string>
@@ -152,6 +153,7 @@
     <string name="about_dev_channel_desc_intdev">IntDev is used for internal testing. It is only available to developers and selected members, and may include specification changes or unstable behavior. Includes a debug menu.</string>
     <string name="about_dev_channel_desc_dev">Beta is a pre-release version. It is published on GitHub and other platforms but may exhibit unstable behavior. Includes a debug menu.</string>
     <string name="about_dev_channel_desc_prerelease">Pre-release is a testing build published before the stable release. It may contain new features, but stability is not guaranteed.</string>
+    <string name="about_dev_channel_desc_rc">RC is a release-candidate build. It is close to the stable release, but may still contain bugs or specification changes.</string>
     <string name="about_dev_channel_desc_stable">Stable is the production version, released after thorough bug verification for reliable performance. Developer features have been removed.</string>
     <string name="about_dev_channel_desc_unknown">No description for this channel.</string>
     <string name="about_simple_version_title">Version</string>
