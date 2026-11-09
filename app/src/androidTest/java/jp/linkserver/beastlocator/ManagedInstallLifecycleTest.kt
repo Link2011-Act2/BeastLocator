@@ -26,7 +26,7 @@ class ManagedInstallLifecycleTest {
     private val launches = AtomicInteger()
 
     @Before fun setup() = runBlocking {
-        assertTrue(android.os.Build.FINGERPRINT.contains("generic") || android.os.Build.MODEL.contains("sdk"))
+        assertTrue(app.packageName.endsWith(".goldyverification") || android.os.Build.FINGERPRINT.contains("generic") || android.os.Build.MODEL.contains("sdk"))
         original = ledger.all.toMap()
         originalIds = installer.pendingRequests().map { it.id }.toSet()
         check(ledger.edit().clear().commit())
@@ -52,7 +52,7 @@ class ManagedInstallLifecycleTest {
     private fun prepared(): Pair<UpdateDownloadViewModel, InstallRequest> {
         val value = model()
         val candidate = selfApkCandidate(app)
-        instrumentation.runOnMainSync { value.action(candidate, UpdateAction.Download) }
+        instrumentation.runOnMainSync { value.action(candidate, UpdateAction.Download); value.onForegroundChanged(false) }
         waitFor { value.state.value.transfer == UpdateTransferState.Ready }
         return value to checkNotNull(value.state.value.preparedRequest)
     }

@@ -27,7 +27,8 @@
     <string name="goldy_update_retry">もう一度確認</string>
     <string name="goldy_update_signing_mismatch">署名が異なるため更新できません</string>
     <string name="goldy_update_verifying">更新ファイルを確認中…</string>
-    <string name="goldy_update_view">更新の詳細を表示</string>
+    <string name="goldy_update_view">更新内容を確認</string>
     <string name="settings_open_failed">Androidの設定を開けませんでした。</string>
     <string name="goldy_update_save_failed">更新情報を保存できませんでした</string>
+    <string name="goldy_update_loading">更新情報を読み込み中…</string>
 </resources>

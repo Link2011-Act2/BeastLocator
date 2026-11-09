@@ -2,6 +2,7 @@ package jp.linkserver.beastlocator
 
 import android.content.Context
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
@@ -28,6 +29,9 @@ class UpdateActivity : AppCompatActivity() {
     private lateinit var button: Button
     private lateinit var progress: ProgressBar
     private lateinit var status: TextView
+    private var normalProgressTint: ColorStateList? = null
+    private var normalTrackTint: ColorStateList? = null
+    private var normalIndeterminateTint: ColorStateList? = null
     private var incoming: UpdateCandidate? = null
     private var candidate: UpdateCandidate? = null
     private var nextAction: UpdateAction? = null
@@ -43,9 +47,14 @@ class UpdateActivity : AppCompatActivity() {
         markwon = Markwon.builder(this).usePlugin(TablePlugin.create(this)).build()
         button = findViewById(R.id.updateDownloadButton)
         progress = findViewById(R.id.updateProgressBar)
+        normalProgressTint = progress.progressTintList
+        normalTrackTint = progress.progressBackgroundTintList
+        normalIndeterminateTint = progress.indeterminateTintList
         status = findViewById(R.id.updateStatusText)
         expanded = savedInstanceState?.getBoolean("history_expanded") ?: false
         findViewById<ImageButton>(R.id.updateBackButton).setOnClickListener { finish() }
+        findViewById<ImageButton>(R.id.updateRecheckButton).setOnClickListener { checkAgain() }
+        findViewById<Button>(R.id.updateCancelPausedButton).setOnClickListener { model.cancel() }
         findViewById<Button>(R.id.updateOpenReleaseButton).setOnClickListener {
             candidate?.release?.url?.let { url -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, url.toUri())) }
                 .onFailure { status.setText(R.string.external_link_open_failed) } }
@@ -111,7 +120,7 @@ class UpdateActivity : AppCompatActivity() {
             }
         }
     }
-    private fun render(state: UpdateDownloadState) {
+    internal fun render(state: UpdateDownloadState) {
         candidate = model.selection.value ?: incoming
         val selected = candidate
         val prepared = state.preparedRequest.takeIf { selected == null }
@@ -123,6 +132,11 @@ class UpdateActivity : AppCompatActivity() {
             renderHeader(selected, prepared?.metadata?.versionName)
         }
         progress.visibility = View.GONE
+        setProgressColors(paused = false)
+        findViewById<Button>(R.id.updateCancelPausedButton).visibility =
+            if (active && state.waiting && !state.restoring && transfer is UpdateTransferState.Failed)
+                View.VISIBLE else View.GONE
+        findViewById<ImageButton>(R.id.updateRecheckButton).isEnabled = !state.busy && !state.restoring
         button.visibility = View.VISIBLE
         button.isEnabled = true
         nextAction = null
@@ -130,14 +144,18 @@ class UpdateActivity : AppCompatActivity() {
             is UpdateTransferState.Downloading -> {
                 nextAction = UpdateAction.CancelDownload
                 button.setText(R.string.goldy_update_cancel_download)
-                showProgress(transfer.progress)
+                showProgress(transfer.progress, paused = false, state.message)
             }
             UpdateTransferState.Verifying, UpdateTransferState.PreparingInstall -> {
                 progress.visibility = View.VISIBLE
                 progress.isIndeterminate = true
                 button.isEnabled = false
                 button.setText(R.string.goldy_transfer_install)
-                status.setText(if (transfer == UpdateTransferState.Verifying) R.string.goldy_update_verifying else R.string.goldy_update_preparing)
+                status.setText(when {
+                    transfer == UpdateTransferState.Verifying -> R.string.goldy_update_verifying
+                    state.restoring && selected == null && prepared == null -> R.string.goldy_update_loading
+                    else -> R.string.goldy_update_preparing
+                })
             }
             UpdateTransferState.PermissionRequired -> {
                 nextAction = UpdateAction.OpenInstallPermissionSettings
@@ -162,8 +180,15 @@ class UpdateActivity : AppCompatActivity() {
                     UpdateAction.OpenInstallPermissionSettings -> R.string.goldy_transfer_allow_install
                     else -> if (state.waiting) R.string.goldy_transfer_restart else R.string.goldy_transfer_download
                 })
-                status.text = transfer.message
-                state.retainedProgress?.takeIf { state.waiting }?.let(::showProgress)
+                status.text = if (state.waiting) getString(R.string.goldy_transfer_paused) else transfer.message
+                if (state.waiting) {
+                    progress.visibility = View.VISIBLE
+                    progress.isIndeterminate = false
+                    progress.progress = 0
+                    progress.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                    setProgressColors(paused = true)
+                    state.retainedProgress?.let { showProgress(it, paused = true, message = null) }
+                }
             }
             else -> {
                 val apk = selected?.release?.let(ApkUpdateProfile.selection::select)
@@ -183,15 +208,26 @@ class UpdateActivity : AppCompatActivity() {
         findViewById<Button>(R.id.updateOpenReleaseButton).visibility = if (selected != null) View.VISIBLE else View.GONE
         renderHistory()
     }
-    private fun showProgress(value: ApkProgress) {
+    private fun showProgress(value: ApkProgress, paused: Boolean, message: String?) {
         progress.visibility = View.VISIBLE
         val fraction = DownloadProgressFormatter.fraction(value)
-        progress.isIndeterminate = fraction == null
+        setProgressColors(paused)
+        progress.isIndeterminate = fraction == null && !paused
+        progress.importantForAccessibility = if (paused && fraction == null)
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO else View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
         progress.max = 1000
         progress.progress = ((fraction ?: 0f) * 1000).toInt()
         val text = DownloadProgressFormatter.format(value, resources.configuration.locales[0])
-        val explanation = if (model.state.value.waiting) getString(R.string.goldy_transfer_paused) else model.state.value.message
+        val explanation = if (paused) getString(R.string.goldy_transfer_paused) else message
         status.text = explanation?.let { "$it\n$text" } ?: text
+    }
+    private fun setProgressColors(paused: Boolean) {
+        val error = if (paused) ColorStateList.valueOf(com.google.android.material.color.MaterialColors.getColor(
+            progress, android.R.attr.colorError)) else normalProgressTint
+        progress.progressTintList = error
+        progress.indeterminateTintList = if (paused) error else normalIndeterminateTint
+        progress.progressBackgroundTintList = if (paused) ColorStateList.valueOf(
+            com.google.android.material.color.MaterialColors.getColor(progress, com.google.android.material.R.attr.colorErrorContainer)) else normalTrackTint
     }
     private fun renderHistory() {
         val selected = candidate

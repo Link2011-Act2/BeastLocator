@@ -79,12 +79,12 @@ class UpdateBackgroundExecutionTest {
             waitFor { runtime.state.value.transfer == UpdateTransferState.Cancelled }
             waitFor { File(app.cacheDir, "goldy-apks").listFiles().orEmpty().none { it.extension == "part" } }
             assertEquals(0, launches)
-            instrumentation.runOnMainSync { runtime.setForeground(owner, true); runtime.action(candidate, UpdateAction.Download) }
+            instrumentation.runOnMainSync { runtime.setForeground(owner, true); runtime.action(candidate, UpdateAction.Download); runtime.setForeground(owner, false) }
             waitFor { runtime.state.value.transfer == UpdateTransferState.Ready }
             assertEquals(0, launches) // Background completion can never launch an installer.
             val request = runtime.state.value.requests.single { it.id !in existing }
             app.contentResolver.openInputStream(request.uri)!!.use { assertTrue(it.read() >= 0) }
-            instrumentation.runOnMainSync { runtime.action(candidate, UpdateAction.Install); runtime.action(candidate, UpdateAction.Install) }
+            instrumentation.runOnMainSync { runtime.setForeground(owner, true); runtime.action(candidate, UpdateAction.Install); runtime.action(candidate, UpdateAction.Install) }
             waitFor { runtime.state.value.transfer == UpdateTransferState.HandedOff }
             assertEquals(1, launches)
             // Test-only cleanup after the recorded callback; no external reader exists.

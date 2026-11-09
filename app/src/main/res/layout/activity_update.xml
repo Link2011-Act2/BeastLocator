@@ -36,6 +36,15 @@
             android:textColor="@color/expressive_on_surface"
             android:textSize="22sp"
             android:textStyle="bold" />
+        <ImageButton
+            android:id="@+id/updateRecheckButton"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/about_check_update_button"
+            android:padding="12dp"
+            android:src="@android:drawable/ic_popup_sync"
+            app:tint="@color/expressive_on_surface" />
     </LinearLayout>
 
     <ScrollView
@@ -193,6 +202,15 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp" />
+
+            <Button
+                android:id="@+id/updateCancelPausedButton"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/goldy_update_cancel_download"
+                android:visibility="gone" />
 
             <Button
                 android:id="@+id/updateOpenReleaseButton"

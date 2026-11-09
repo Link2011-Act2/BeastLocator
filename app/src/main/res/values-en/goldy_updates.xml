@@ -30,4 +30,5 @@
     <string name="goldy_update_view">View update</string>
     <string name="settings_open_failed">Could not open Android settings.</string>
     <string name="goldy_update_save_failed">Could not save update settings</string>
+    <string name="goldy_update_loading">Loading update information…</string>
 </resources>

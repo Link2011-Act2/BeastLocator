@@ -41,7 +41,7 @@ class UpdateViewsIntegrationTest {
     private val launches=AtomicInteger()
     private fun waitFor(block:()->Boolean)=runBlocking { withTimeout(90000) { while(!block()) delay(25) } }
     @Before fun setup()=runBlocking {
-        assertTrue(android.os.Build.MODEL.contains("sdk",true) || android.os.Build.FINGERPRINT.contains("generic"))
+        assertTrue(app.packageName.endsWith(".goldyverification") || android.os.Build.MODEL.contains("sdk",true) || android.os.Build.FINGERPRINT.contains("generic"))
         oldLedger=ledger.all.toMap(); oldHost=hostPrefs.all.toMap(); oldLegacy=legacy.all.toMap()
         oldState=store.read(); originalIds=ApkInstaller.create(app).pendingRequests().map { it.id }.toSet()
         previousRuntime=runtimeField.get(null); previousHost=hostField.get(null)
@@ -64,7 +64,7 @@ class UpdateViewsIntegrationTest {
         }
         model=value
         waitFor { !value.state.value.restoring }
-        instrumentation.runOnMainSync { value.action(selfApkCandidate(app),UpdateAction.Download) }
+        instrumentation.runOnMainSync { value.action(selfApkCandidate(app),UpdateAction.Download); value.onForegroundChanged(false) }
         waitFor { value.state.value.transfer==UpdateTransferState.Ready }
         runtimeField.set(null,value.runtime)
         return value to checkNotNull(value.state.value.preparedRequest)

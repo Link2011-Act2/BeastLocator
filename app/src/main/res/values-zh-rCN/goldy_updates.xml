@@ -27,7 +27,8 @@
     <string name="goldy_update_retry">重新检查</string>
     <string name="goldy_update_signing_mismatch">签名不同，无法更新</string>
     <string name="goldy_update_verifying">正在检查更新文件…</string>
-    <string name="goldy_update_view">查看更新</string>
+    <string name="goldy_update_view">查看更新内容</string>
     <string name="settings_open_failed">无法打开 Android 设置</string>
     <string name="goldy_update_save_failed">无法保存更新信息</string>
+    <string name="goldy_update_loading">正在加载更新信息…</string>
 </resources>

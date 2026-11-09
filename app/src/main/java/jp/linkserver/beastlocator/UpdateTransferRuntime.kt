@@ -185,7 +185,7 @@ internal class UpdateTransferRuntime(
         if (!execution.enqueue(ticket, ApkUpdateProfile.selection.select(candidate.release)?.size)) paused(text(R.string.goldy_transfer_schedule_failed))
     }
 
-    /** Only an Android execution component calls this. Successful download never launches an installer. */
+    /** Only an Android execution component calls this. Auto-launch is limited to foreground completion. */
     suspend fun runScheduledTransfer(ticket: String) = withContext(Dispatchers.Main.immediate) {
         initialized.await()
         val job = currentCoroutineContext().job
@@ -230,8 +230,22 @@ internal class UpdateTransferRuntime(
                 } else publishReady = false
                 try { refreshRequests() } catch (_: Exception) { mutableState.update { it.copy(message = text(R.string.goldy_update_restore_failed)) } }
             }
-            if (operation === job) operation = null
-            if (publishReady && selectedRequest != null) mutableState.update { it.copy(transfer = UpdateTransferState.Ready, waiting = false, message = null) }
+            try {
+                selectedRequest?.takeIf { publishReady }?.let { request ->
+                    mutableState.update { it.copy(transfer = UpdateTransferState.Ready, waiting = false, message = null) }
+                    // Only this live completion may auto-launch; restored Ready is always explicit.
+                    try {
+                        if (currentCoroutineContext().isActive && foregroundOwners.isNotEmpty()) launch(request)
+                    } catch (cancel: CancellationException) {
+                        if (state.value.transfer == UpdateTransferState.PreparingInstall)
+                            mutableState.update { it.copy(transfer = UpdateTransferState.Ready) }
+                        throw cancel
+                    }
+                }
+            } finally {
+                // Keep commands serialized through the installer handoff as well as preparation.
+                if (operation === job) operation = null
+            }
         }
     }
 

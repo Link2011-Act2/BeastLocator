@@ -30,7 +30,7 @@ class UpdatePermissionRecoveryTest {
     private fun newProcess() { assertNotEquals(journal.getInt("pid", 0), Process.myPid()); journal.edit().putInt("pid", Process.myPid()).commit() }
 
     @Test fun stage1DeniedDoubleSettingsPersistsIntent() {
-        assertTrue(android.os.Build.MODEL.contains("sdk", ignoreCase = true) || android.os.Build.FINGERPRINT.contains("generic"))
+        assertTrue(app.packageName.endsWith(".goldyverification") || android.os.Build.MODEL.contains("sdk", ignoreCase = true) || android.os.Build.FINGERPRINT.contains("generic"))
         assertFalse(journal.contains("original"))
         val backup = JSONObject()
         ledger.all.forEach { (key, value) -> backup.put(key, if (value is Set<*>) JSONArray(value.toList()) else value) }
@@ -68,7 +68,7 @@ class UpdatePermissionRecoveryTest {
         action(model, UpdateAction.OpenInstallPermissionSettings) // A stale UI click must not reopen Settings.
         Thread.sleep(100)
         assertTrue(launches.isEmpty())
-        action(model, UpdateAction.Download)
+        instrumentation.runOnMainSync { model.action(selfApkCandidate(app), UpdateAction.Download); model.onForegroundChanged(false) }
         waitFor { model.state.value.transfer == UpdateTransferState.Ready }
         assertTrue(launches.isEmpty())
         val request = model.state.value.requests.single { it.id == ledger.getString("selected_request", null) }

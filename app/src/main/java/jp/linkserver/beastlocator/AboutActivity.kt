@@ -56,21 +56,17 @@ class AboutActivity : AppCompatActivity() {
             checkForUpdateManually()
         }
 
-        findViewById<android.widget.Button>(R.id.aboutRecheckUpdateButton).setOnClickListener { checkAgain() }
         lifecycleScope.launch {
             try {
                 val host = AppUpdateManager.host(this@AboutActivity)
                 host.initialize()
                 repeatOnLifecycle(Lifecycle.State.STARTED) {
-                    host.engine.state.collect { state ->
+                    kotlinx.coroutines.flow.combine(host.engine.state, UpdateTransferRuntime.get(application).state) { state, transfer -> state to transfer }.collect { (state, transfer) ->
                         val update = state.availableUpdate
+                        val canOpen = update != null || transfer.hasTransfer || transfer.restoring
                         findViewById<android.widget.Button>(R.id.aboutCheckUpdateButton).apply {
-                            isEnabled = !state.checking
-                            setText(if (update == null) R.string.about_check_update_button else R.string.goldy_update_view)
-                        }
-                        findViewById<android.widget.Button>(R.id.aboutRecheckUpdateButton).apply {
-                            visibility = if (update == null) android.view.View.GONE else android.view.View.VISIBLE
-                            isEnabled = !state.checking
+                            isEnabled = canOpen || !state.checking
+                            setText(if (canOpen) R.string.goldy_update_view else R.string.about_check_update_button)
                         }
                         findViewById<TextView>(R.id.aboutUpdateNotesText).apply {
                             when {
@@ -114,7 +110,8 @@ class AboutActivity : AppCompatActivity() {
         AppUpdateManager.host(this).engine.state.value.availableUpdate?.let {
             startActivity(UpdateActivity.createIntent(this, it)); return
         }
-        checkAgain()
+        val transfer = UpdateTransferRuntime.get(application).state.value
+        if (transfer.hasTransfer || transfer.restoring) startActivity(Intent(this, UpdateActivity::class.java)) else checkAgain()
     }
     private fun checkAgain() {
         val button = findViewById<android.widget.Button>(R.id.aboutCheckUpdateButton)
@@ -126,9 +123,8 @@ class AboutActivity : AppCompatActivity() {
             updateCheckOperation = null
             button.isEnabled = true
             result.onSuccess { update ->
-                button.setText(if (update == null) R.string.about_check_update_button else R.string.goldy_update_view)
+                button.setText(if (update != null || UpdateTransferRuntime.get(application).state.value.hasTransfer) R.string.goldy_update_view else R.string.about_check_update_button)
                 notes.text = if (update == null) getString(R.string.update_check_latest) else getString(R.string.update_available, update.release.tag)
-                findViewById<android.widget.Button>(R.id.aboutRecheckUpdateButton).visibility = if (update == null) android.view.View.GONE else android.view.View.VISIBLE
             }.onFailure { notes.setText(R.string.goldy_update_failed) }
         }
     }
