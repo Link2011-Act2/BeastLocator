@@ -1,0 +1,33 @@
+<resources>
+    <string name="goldy_transfer_allow_install">設定でインストールを許可する</string>
+    <string name="goldy_transfer_channel">アプリの更新</string>
+    <string name="goldy_transfer_download">更新をダウンロード</string>
+    <string name="goldy_transfer_foreground_install">アプリに戻ってインストールしてください</string>
+    <string name="goldy_transfer_install">インストール</string>
+    <string name="goldy_transfer_paused">ダウンロードが中断されました</string>
+    <string name="goldy_transfer_permission_ready">インストールの許可が必要です</string>
+    <string name="goldy_transfer_queued">ダウンロードを開始しています…</string>
+    <string name="goldy_transfer_restart">ダウンロードを再開</string>
+    <string name="goldy_transfer_restarted">最初からダウンロードし直しています…</string>
+    <string name="goldy_transfer_schedule_failed">ダウンロードを開始できませんでした</string>
+    <string name="goldy_transfer_title">BeastLocatorの更新</string>
+    <string name="goldy_update_cancel_download">ダウンロードをキャンセル</string>
+    <string name="goldy_update_cancelled">ダウンロードをキャンセルしました</string>
+    <string name="goldy_update_cleanup_failed">一時ファイルを削除できませんでした</string>
+    <string name="goldy_update_download_failed">ダウンロードに失敗しました</string>
+    <string name="goldy_update_failed">更新の確認に失敗しました</string>
+    <string name="goldy_update_handed_off">インストーラーを開きました</string>
+    <string name="goldy_update_idle">更新を確認できます</string>
+    <string name="goldy_update_install_failed">インストールを開始できませんでした</string>
+    <string name="goldy_update_invalid_apk">このAPKでは更新できません</string>
+    <string name="goldy_update_no_apk">ダウンロードできるAPKがありません</string>
+    <string name="goldy_update_preparing">インストールの準備中…</string>
+    <string name="goldy_update_ready">インストールできます</string>
+    <string name="goldy_update_restore_failed">更新情報を復元できませんでした</string>
+    <string name="goldy_update_retry">もう一度確認</string>
+    <string name="goldy_update_signing_mismatch">署名が異なるため更新できません</string>
+    <string name="goldy_update_verifying">更新ファイルを確認中…</string>
+    <string name="goldy_update_view">更新の詳細を表示</string>
+    <string name="settings_open_failed">Androidの設定を開けませんでした。</string>
+    <string name="goldy_update_save_failed">更新情報を保存できませんでした</string>
+</resources>

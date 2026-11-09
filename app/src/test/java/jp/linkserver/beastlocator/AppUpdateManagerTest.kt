@@ -1,92 +1,43 @@
 package jp.linkserver.beastlocator
 
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
+import jp.linkserver.goldy.*
+import org.junit.Assert.*
 import org.junit.Test
 
+/** Host configuration tests. Gold's signature/rotation protocol tests are reused at the pinned SHA. */
 class AppUpdateManagerTest {
-    @Test
-    fun candidateVersionMustNotBeOlderThanInstalledVersion() {
-        assertTrue(isUpdateVersionCodeAcceptable(100L, 100L))
-        assertTrue(isUpdateVersionCodeAcceptable(100L, 101L))
-        assertFalse(isUpdateVersionCodeAcceptable(101L, 100L))
+    @Test fun appProfileUsesCommonCorePolicyAndOneApk() {
+        assertEquals(GitHubRepository("Link2011-Act2", "BeastLocator"), ApkUpdateProfile.repository)
+        assertEquals(UpdatePolicies.beastLocator(), ApkUpdateProfile.policy)
+        assertSame(VersionPolicies.Common, ApkUpdateProfile.policy.versions)
+        assertSame(ApkSelectionPolicies.Single, ApkUpdateProfile.selection)
+        assertTrue(ApkUpdateProfile.policy.feed is ReleaseFeed.ListReleases)
     }
-
-    @Test
-    fun sameSingleSignerIsAccepted() {
-        assertTrue(
-            isSigningLineageCompatible(
-                installed = identity(current = setOf("signer-a")),
-                candidate = identity(current = setOf("signer-a"))
-            )
-        )
+    @Test fun downloadConfigurationKeepsStrictBindingAndSizeLimit() {
+        val config = ApkUpdateProfile.downloadConfig("1.0.0-RC1")
+        assertSame(ApkSelectionPolicies.Single, config.selection)
+        assertSame(ApkVersionBindings.Published, config.versionBinding)
+        assertEquals(256L * 1024 * 1024, config.maxBytes)
     }
-
-    @Test
-    fun forwardCertificateRotationIsAccepted() {
-        assertTrue(
-            isSigningLineageCompatible(
-                installed = identity(current = setOf("signer-a")),
-                candidate = identity(
-                    current = setOf("signer-b"),
-                    history = setOf("signer-a", "signer-b")
-                )
-            )
-        )
+    @Test fun developerOptionsAreGatedByActualInstalledChannel() {
+        for (name in listOf("1.0.0-Release", "1.0.0-RC1", "1.0.0-Beta2", "invalid"))
+            assertEquals(DeveloperOptions(), updateOptions(name, true, "0.1.0-IntDev").developer)
     }
-
-    @Test
-    fun candidateUsingOnlyOlderCertificateIsRejected() {
-        assertFalse(
-            isSigningLineageCompatible(
-                installed = identity(
-                    current = setOf("signer-b"),
-                    history = setOf("signer-a", "signer-b")
-                ),
-                candidate = identity(current = setOf("signer-a"))
-            )
-        )
+    @Test fun intDevPreviewPreservesVersionOverrideWithoutChangingApkBinding() {
+        val options = updateOptions("1.0.0-IntDev_rev3", true, " 0.1.0-IntDev ")
+        assertTrue(options.developer.ignoreVersionComparison)
+        assertEquals("0.1.0-IntDev", options.developer.currentVersionOverride)
+        assertSame(ApkVersionBindings.Published, ApkUpdateProfile.downloadConfig("1.0.0-IntDev_rev3").versionBinding)
     }
-
-    @Test
-    fun unrelatedCertificateIsRejected() {
-        assertFalse(
-            isSigningLineageCompatible(
-                installed = identity(current = setOf("signer-a")),
-                candidate = identity(current = setOf("signer-x"))
-            )
-        )
+    @Test fun emptyOverrideDoesNotReplaceInstalledVersion() {
+        assertNull(updateOptions("1.0.0-IntDev", false, "  ").developer.currentVersionOverride)
+        assertFalse(updateOptions("1.0.0-IntDev", false, null).developer.ignoreVersionComparison)
     }
-
-    @Test
-    fun multipleSignerPackagesRequireExactSignerSet() {
-        assertTrue(
-            isSigningLineageCompatible(
-                installed = identity(setOf("a", "b"), multiple = true),
-                candidate = identity(setOf("a", "b"), multiple = true)
-            )
-        )
-        assertFalse(
-            isSigningLineageCompatible(
-                installed = identity(setOf("a", "b"), multiple = true),
-                candidate = identity(setOf("a", "c"), multiple = true)
-            )
-        )
-        assertFalse(
-            isSigningLineageCompatible(
-                installed = identity(setOf("a", "b"), multiple = true),
-                candidate = identity(setOf("a"), multiple = false)
-            )
-        )
+    @Test fun transferExecutionIsSeparateFromLocationAndSound() {
+        assertEquals("beast-apk-update-transfer-v1", ApkUpdateProfile.WORK_NAME)
+        assertEquals("beast-apk-updates", ApkUpdateProfile.JOB_NAMESPACE)
+        assertNotEquals("destination_channel", ApkUpdateProfile.CHANNEL)
+        assertNotEquals("sound_monitor_channel", ApkUpdateProfile.CHANNEL)
+        assertTrue(ApkUpdateProfile.NOTIFICATION_ID !in setOf(1001, 1514, 1515))
     }
-
-    private fun identity(
-        current: Set<String>,
-        history: Set<String> = current,
-        multiple: Boolean = false
-    ) = ApkSigningIdentity(
-        currentSigners = current,
-        signingHistory = history,
-        hasMultipleSigners = multiple
-    )
 }

@@ -1,506 +1,118 @@
 package jp.linkserver.beastlocator
 
 import android.content.Context
-import android.content.Intent
-import android.content.pm.PackageInfo
-import android.content.pm.PackageManager
-import android.content.pm.Signature
-import android.os.Build
-import android.os.Handler
-import android.os.Looper
-import android.provider.Settings
-import androidx.core.content.edit
-import androidx.core.content.FileProvider
-import androidx.core.net.toUri
-import java.io.File
-import java.net.HttpURLConnection
-import java.net.URI
-import java.net.URL
-import java.security.MessageDigest
-import java.util.concurrent.ArrayBlockingQueue
-import java.util.concurrent.Future
-import java.util.concurrent.ThreadPoolExecutor
-import java.util.concurrent.TimeUnit
+import android.widget.Toast
+import jp.linkserver.goldy.*
+import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
 
-data class ApkDownloadProgress(
-    val downloadedBytes: Long,
-    val totalBytes: Long?
-)
-
+/** Host preferences and callback bridge only; Gold owns the catalog, selection and persisted update state. */
 object AppUpdateManager {
-    private const val REPOSITORY_URL = "https://github.com/Link2011-Act2/BeastLocator"
-    private const val UPDATE_PREFS = "github_release_updates"
-    private const val KEY_LAST_CHECK_MS = "last_check_ms"
-    private const val KEY_DISMISSED_UPDATE_TAG = "dismissed_update_tag"
-    private const val KEY_SHOW_LATEST_FOR_TESTING = "show_latest_release_for_testing"
-    private const val KEY_CURRENT_VERSION_OVERRIDE_FOR_TESTING =
-        "current_version_override_for_testing"
-    private const val CHECK_INTERVAL_MILLIS = 8L * 60L * 60L * 1000L
-    private const val MAX_QUEUED_OPERATIONS = 4
-    private const val MAX_APK_BYTES = 250L * 1024L * 1024L
-    private const val PROGRESS_UPDATE_STEP_BYTES = 256L * 1024L
-    private const val MAX_REDIRECTS = 5
-
-    private val executor = ThreadPoolExecutor(
-        2,
-        2,
-        30L,
-        TimeUnit.SECONDS,
-        ArrayBlockingQueue(MAX_QUEUED_OPERATIONS),
-        { runnable -> Thread(runnable, "beastlocator-updater").apply { isDaemon = true } },
-        ThreadPoolExecutor.AbortPolicy()
-    )
-    private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
-
-    class Operation internal constructor(
-        private val cancelled: AtomicBoolean,
-        private val futureRef: AtomicReference<Future<*>?>,
-        private val connectionRef: AtomicReference<HttpURLConnection?>
-    ) {
-        fun cancel() {
-            if (!cancelled.compareAndSet(false, true)) return
-            connectionRef.getAndSet(null)?.disconnect()
-            futureRef.getAndSet(null)?.cancel(true)
-            executor.purge()
-        }
+    private const val PREFS = "github_release_updates"
+    private const val PREVIEW = "show_latest_release_for_testing"
+    private const val OVERRIDE = "current_version_override_for_testing"
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    @Volatile private var instance: HostUpdates? = null
+    internal fun host(context: Context): HostUpdates = instance ?: synchronized(this) {
+        instance ?: HostUpdates(context.applicationContext).also { instance = it }
     }
-
-    fun checkForUpdate(
-        context: Context,
-        force: Boolean = false,
-        onResult: (Result<AppUpdateInfo?>) -> Unit
-    ): Operation? {
-        val appContext = context.applicationContext
-        if (!force && !shouldCheckForUpdates(appContext)) return null
-        return submit { cancelled, _ ->
-            val result = runCatching {
-                val currentVersion = resolveUpdateCurrentVersionForTesting(appContext)
-                GitHubReleaseChecker.check(
-                    repositoryUrl = REPOSITORY_URL,
-                    currentVersion = currentVersion,
-                    showLatestForTesting = isShowLatestReleaseForTestingEnabled(appContext),
-                    supportedAbis = Build.SUPPORTED_ABIS.toList()
-                )
-            }
-            appContext.getSharedPreferences(UPDATE_PREFS, Context.MODE_PRIVATE)
-                .edit { putLong(KEY_LAST_CHECK_MS, System.currentTimeMillis()) }
-            postIfActive(cancelled) { onResult(result) }
-        }
+    /** Detaches a screen's callback; the application-owned check still updates Gold's state. */
+    class Operation internal constructor(private val job: Job, private val observing: AtomicBoolean) {
+        val isActive: Boolean get() = observing.get() && job.isActive
+        fun cancel() { observing.set(false) }
     }
-
-    fun downloadApk(
-        context: Context,
-        updateInfo: AppUpdateInfo,
-        onProgress: (ApkDownloadProgress) -> Unit,
-        onResult: (Result<File>) -> Unit
-    ): Operation {
-        val appContext = context.applicationContext
-        return submit { cancelled, connectionRef ->
-            val result = runCatching {
-                val downloadUrl = updateInfo.apkDownloadUrl
-                    ?: error("APK asset is not available")
-                check(isTrustedGitHubDownloadUrl(downloadUrl)) {
-                    "Untrusted APK download URL"
+    fun checkForUpdate(context: Context, force: Boolean = false, onResult: (Result<UpdateCandidate?>) -> Unit): Operation {
+        val app = context.applicationContext
+        val observing = AtomicBoolean(true)
+        val job = scope.launch {
+            // Deliver cached outcomes after the caller has stored its operation handle.
+            yield()
+            val result = try {
+                val host = host(app)
+                when (val outcome = host.check(force)) {
+                    is CheckOutcome.Failure -> Result.failure(IllegalStateException(outcome.error.toString()))
+                    else -> Result.success(if (force) host.engine.state.value.availableUpdate else
+                        host.engine.state.value.notificationUpdate.takeIf { host.engine.state.value.showBanner })
                 }
-                val file = downloadApkFile(
-                    appContext,
-                    downloadUrl,
-                    updateInfo.apkAssetName ?: "${updateInfo.tagName}.apk",
-                    cancelled,
-                    connectionRef,
-                    onProgress
-                )
-                runCatching { validateApkPackage(appContext, file) }
-                    .onFailure { file.delete() }
-                    .getOrThrow()
-                file
-            }
-            postDownloadResultIfActive(cancelled, result, onResult)
+            } catch (cancel: CancellationException) { throw cancel }
+            catch (error: Exception) { Result.failure(error) }
+            try { if (observing.get()) onResult(result) }
+            catch (cancel: CancellationException) { throw cancel }
+            catch (error: Exception) { AppDiagnostics.warn("updater_callback_failed", error = error) }
         }
+        return Operation(job, observing)
     }
-
-    fun isUpdateNotificationDismissed(context: Context, tagName: String): Boolean =
-        context.getSharedPreferences(UPDATE_PREFS, Context.MODE_PRIVATE)
-            .getString(KEY_DISMISSED_UPDATE_TAG, null)
-            .equals(tagName, ignoreCase = true)
-
     fun dismissUpdateNotificationUntilNextVersion(context: Context, tagName: String) {
-        context.getSharedPreferences(UPDATE_PREFS, Context.MODE_PRIVATE)
-            .edit { putString(KEY_DISMISSED_UPDATE_TAG, tagName) }
+        command(context) { initialize(); engine.ignoreVersion(tagName) }
     }
-
-    fun isShowLatestReleaseForTestingEnabled(context: Context): Boolean {
-        if (!isIntDevBuild()) return false
-        return context.getSharedPreferences(UPDATE_PREFS, Context.MODE_PRIVATE)
-            .getBoolean(KEY_SHOW_LATEST_FOR_TESTING, false)
+    fun hideBanner(context: Context) = command(context) {
+        initialize()
+        val tag = engine.state.value.notificationUpdate?.release?.tag
+        engine.hideBanner()
+        withContext(Dispatchers.IO) { kotlin.check(hostPrefs.edit().putString("hidden_banner_tag", tag).commit()) }
     }
-
+    private fun command(context: Context, action: suspend HostUpdates.() -> Unit) {
+        val app = context.applicationContext
+        scope.launch {
+            yield()
+            try { host(app).action() }
+            catch (cancel: CancellationException) { throw cancel }
+            catch (error: Exception) {
+                AppDiagnostics.warn("updater_state_save_failed", error = error)
+                Toast.makeText(app, R.string.goldy_update_save_failed, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+    private fun preferences(context: Context) = context.getSharedPreferences(PREFS, 0)
+    private fun developer(context: Context) = VersionPolicies.Common.channel(installedVersionName(context)) == jp.linkserver.goldy.ReleaseChannel.IntDev
+    fun isShowLatestReleaseForTestingEnabled(context: Context): Boolean = developer(context) && preferences(context).getBoolean(PREVIEW, false)
     fun setShowLatestReleaseForTestingEnabled(context: Context, enabled: Boolean) {
-        context.getSharedPreferences(UPDATE_PREFS, Context.MODE_PRIVATE).edit {
-            if (isIntDevBuild()) {
-                putBoolean(KEY_SHOW_LATEST_FOR_TESTING, enabled)
-            } else {
-                remove(KEY_SHOW_LATEST_FOR_TESTING)
-            }
-        }
+        preferences(context).edit().putBoolean(PREVIEW, enabled && developer(context)).apply()
     }
-
-    fun getUpdateCurrentVersionOverrideForTesting(context: Context): String {
-        if (!isIntDevBuild()) return ""
-        return context.getSharedPreferences(UPDATE_PREFS, Context.MODE_PRIVATE)
-            .getString(KEY_CURRENT_VERSION_OVERRIDE_FOR_TESTING, null)
-            .orEmpty()
-    }
-
+    fun getUpdateCurrentVersionOverrideForTesting(context: Context): String =
+        if (developer(context)) preferences(context).getString(OVERRIDE, "").orEmpty() else ""
     fun setUpdateCurrentVersionOverrideForTesting(context: Context, override: String) {
-        val trimmedOverride = override.trim()
-        context.getSharedPreferences(UPDATE_PREFS, Context.MODE_PRIVATE).edit {
-            if (!isIntDevBuild() || trimmedOverride.isBlank()) {
-                remove(KEY_CURRENT_VERSION_OVERRIDE_FOR_TESTING)
-            } else {
-                putString(KEY_CURRENT_VERSION_OVERRIDE_FOR_TESTING, trimmedOverride)
-            }
-        }
+        preferences(context).edit().apply {
+            if (developer(context) && override.isNotBlank()) putString(OVERRIDE, override.trim()) else remove(OVERRIDE)
+        }.apply()
     }
 
-    fun resolveUpdateCurrentVersionForTesting(context: Context): String =
-        getUpdateCurrentVersionOverrideForTesting(context).ifBlank { BuildConfig.VERSION_NAME }
-
-    fun canRequestPackageInstalls(context: Context): Boolean =
-        runCatching { context.packageManager.canRequestPackageInstalls() }.getOrDefault(false)
-
-    fun openUnknownAppInstallSettings(context: Context) {
-        val intent = Intent(
-            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-            "package:${context.packageName}".toUri()
-        )
-        context.startActivity(intent)
-    }
-
-    fun openPackageInstaller(context: Context, apkFile: File) {
-        val apkUri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.provider",
-            apkFile
-        )
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(apkUri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        val resolved = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.packageManager.resolveActivity(
-                intent,
-                PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_DEFAULT_ONLY.toLong())
-            )
-        } else {
-            @Suppress("DEPRECATION")
-            context.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
-        }
-        check(resolved != null) { "Package installer is not available" }
-        context.startActivity(intent)
-    }
-
-    private fun shouldCheckForUpdates(context: Context): Boolean {
-        if (isShowLatestReleaseForTestingEnabled(context)) return true
-        val lastCheck = context.getSharedPreferences(UPDATE_PREFS, Context.MODE_PRIVATE)
-            .getLong(KEY_LAST_CHECK_MS, 0L)
-        val elapsed = System.currentTimeMillis() - lastCheck
-        return elapsed < 0L || elapsed >= CHECK_INTERVAL_MILLIS
-    }
-
-    private fun isIntDevBuild(): Boolean =
-        ReleaseChannelDetector.detect(BuildConfig.VERSION_NAME) == ReleaseChannel.INTDEV
-
-    private fun submit(
-        block: (
-            cancelled: AtomicBoolean,
-            connectionRef: AtomicReference<HttpURLConnection?>
-        ) -> Unit
-    ): Operation {
-        val cancelled = AtomicBoolean(false)
-        val futureRef = AtomicReference<Future<*>?>(null)
-        val connectionRef = AtomicReference<HttpURLConnection?>(null)
-        val operation = Operation(cancelled, futureRef, connectionRef)
-        val future = runCatching {
-            executor.submit {
-                try {
-                    if (!cancelled.get()) block(cancelled, connectionRef)
-                } finally {
-                    connectionRef.getAndSet(null)?.disconnect()
-                    futureRef.set(null)
-                }
-            }
-        }.getOrElse { error ->
-            cancelled.set(true)
-            throw IllegalStateException("Updater queue is full", error)
-        }
-        futureRef.set(future)
-        if (cancelled.get()) operation.cancel()
-        return operation
-    }
-
-    private fun postIfActive(cancelled: AtomicBoolean, action: () -> Unit) {
-        if (cancelled.get()) return
-        mainHandler.post {
-            if (!cancelled.get()) {
-                runCatching(action).onFailure {
-                    AppDiagnostics.warn("updater_callback_failed", error = it)
-                }
-            }
-        }
-    }
-
-    private fun postDownloadResultIfActive(
-        cancelled: AtomicBoolean,
-        result: Result<File>,
-        onResult: (Result<File>) -> Unit
-    ) {
-        if (cancelled.get()) {
-            result.getOrNull()?.delete()
-            return
-        }
-        mainHandler.post {
-            if (cancelled.get()) {
-                result.getOrNull()?.delete()
-            } else {
-                runCatching { onResult(result) }.onFailure {
-                    AppDiagnostics.warn("updater_callback_failed", error = it)
-                }
-            }
-        }
-    }
-
-    private fun downloadApkFile(
-        context: Context,
-        downloadUrl: String,
-        assetName: String,
-        cancelled: AtomicBoolean,
-        connectionRef: AtomicReference<HttpURLConnection?>,
-        onProgress: (ApkDownloadProgress) -> Unit
-    ): File {
-        val safeName = assetName.substringAfterLast('/')
-            .replace(Regex("""[^A-Za-z0-9._-]"""), "_")
-            .ifBlank { "BeastLocator-update.apk" }
-            .let { if (it.endsWith(".apk", ignoreCase = true)) it else "$it.apk" }
-        val updatesDir = File(context.cacheDir, "updates").apply {
-            check(isDirectory || mkdirs()) { "Could not create update cache" }
-        }
-        updatesDir.listFiles()
-            ?.filter { it.isFile && (it.extension.equals("apk", true) || it.name.endsWith(".part")) }
-            ?.forEach { it.delete() }
-        val destination = File(updatesDir, safeName)
-        val partial = File(updatesDir, "$safeName.part")
-        val connection = openDownloadConnection(downloadUrl, connectionRef)
-        try {
-            val totalBytes = connection.contentLengthLong.takeIf { it > 0L }
-            check(totalBytes == null || totalBytes <= MAX_APK_BYTES) { "APK is too large" }
-            connection.inputStream.use { input ->
-                partial.outputStream().use { output ->
-                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                    var downloadedBytes = 0L
-                    var lastProgressBytes = -PROGRESS_UPDATE_STEP_BYTES
-                    postIfActive(cancelled) {
-                        onProgress(ApkDownloadProgress(downloadedBytes, totalBytes))
+    internal class HostUpdates(private val app: Context,
+        private val store: UpdateStateStore = UpdateStateStores.preferences(app, ApkUpdateProfile.repository)) {
+        private val legacy = preferences(app)
+        val hostPrefs = app.getSharedPreferences("goldy_host_updates", 0)
+        val engine = Goldy.create(app, GoldyConfig(ApkUpdateProfile.repository, ApkUpdateProfile.policy,
+            userAgent = "BeastLocator/${installedVersionName(app)}"), store)
+        private val gate = Mutex()
+        private var initialized = false
+        suspend fun initialize() = gate.withLock {
+            if (!initialized) {
+                if (!hostPrefs.getBoolean("migration_v1", false)) {
+                    val tag = legacy.getString("dismissed_update_tag", null)?.takeIf { it.isNotBlank() && it.length <= 512 }?.lowercase(Locale.ROOT)
+                    val previous = store.read()
+                    store.write(previous.copy(ignoredTags = previous.ignoredTags + listOfNotNull(tag)))
+                    withContext(Dispatchers.IO) {
+                        kotlin.check(hostPrefs.edit().putLong("legacy_last_check_ms", legacy.getLong("last_check_ms", 0))
+                            .putBoolean("migration_v1", true).commit())
                     }
-                    while (true) {
-                        check(!cancelled.get() && !Thread.currentThread().isInterrupted) {
-                            "Download cancelled"
-                        }
-                        val read = input.read(buffer)
-                        if (read < 0) break
-                        downloadedBytes += read
-                        check(downloadedBytes <= MAX_APK_BYTES) { "APK is too large" }
-                        output.write(buffer, 0, read)
-                        if (downloadedBytes - lastProgressBytes >= PROGRESS_UPDATE_STEP_BYTES) {
-                            lastProgressBytes = downloadedBytes
-                            postIfActive(cancelled) {
-                                onProgress(ApkDownloadProgress(downloadedBytes, totalBytes))
-                            }
-                        }
-                    }
-                    check(totalBytes == null || downloadedBytes == totalBytes) {
-                        "APK download was incomplete"
-                    }
+                    // The previous in-memory DTO lacked authenticated release/asset metadata. Fetch it afresh.
                 }
+                engine.updateOptions(options())
+                engine.restoreCachedState()
+                if (hostPrefs.getString("hidden_banner_tag", null)?.equals(engine.state.value.notificationUpdate?.release?.tag, true) == true) engine.hideBanner()
+                initialized = true
             }
-            check(partial.renameTo(destination)) { "Could not finalize APK" }
-            return destination
-        } catch (error: Throwable) {
-            destination.delete()
-            throw error
-        } finally {
-            connectionRef.compareAndSet(connection, null)
-            connection.disconnect()
-            partial.delete()
+        }
+        private fun options() = updateOptions(installedVersionName(app), legacy.getBoolean(PREVIEW, false), legacy.getString(OVERRIDE, null))
+        suspend fun check(manual: Boolean): CheckOutcome {
+            initialize()
+            engine.updateOptions(options())
+            val result = engine.check(if (manual) CheckTrigger.Manual else CheckTrigger.Automatic)
+            if (hostPrefs.getString("hidden_banner_tag", null)?.equals(engine.state.value.notificationUpdate?.release?.tag, true) == true) engine.hideBanner()
+            return result
         }
     }
-
-    private fun openDownloadConnection(
-        initialUrl: String,
-        connectionRef: AtomicReference<HttpURLConnection?>
-    ): HttpURLConnection {
-        var currentUri = URI(initialUrl)
-        repeat(MAX_REDIRECTS + 1) { redirectCount ->
-            check(isTrustedGitHubDownloadUrl(currentUri.toString())) {
-                "Untrusted APK download redirect"
-            }
-            val connection = (URL(currentUri.toString()).openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = 15_000
-                readTimeout = 30_000
-                instanceFollowRedirects = false
-                setRequestProperty("User-Agent", "BeastLocator-Updater/${BuildConfig.VERSION_NAME}")
-            }
-            connectionRef.set(connection)
-            val status = connection.responseCode
-            if (status in 200..299) return connection
-            if (status !in REDIRECT_STATUS_CODES || redirectCount >= MAX_REDIRECTS) {
-                connection.disconnect()
-                error("APK download returned HTTP $status")
-            }
-            val location = connection.getHeaderField("Location")
-            connection.disconnect()
-            check(!location.isNullOrBlank()) { "APK redirect has no destination" }
-            currentUri = currentUri.resolve(location)
-        }
-        error("Too many APK download redirects")
-    }
-
-    private fun validateApkPackage(context: Context, apkFile: File) {
-        val packageManager = context.packageManager
-        val archiveInfo = getArchivePackageInfo(packageManager, apkFile)
-            ?: error("Downloaded file is not a valid APK")
-        check(archiveInfo.packageName == context.packageName) {
-            "Downloaded APK is not a BeastLocator package"
-        }
-        val installedInfo = getInstalledPackageInfo(packageManager, context.packageName)
-        val installedVersionCode = installedInfo.longVersionCodeCompat()
-        val archiveVersionCode = archiveInfo.longVersionCodeCompat()
-        check(isUpdateVersionCodeAcceptable(installedVersionCode, archiveVersionCode)) {
-            "Downloaded APK version is older than the installed app"
-        }
-        val installedSigningIdentity = installedInfo.toSigningIdentity()
-        val archiveSigningIdentity = archiveInfo.toSigningIdentity()
-        check(isSigningLineageCompatible(installedSigningIdentity, archiveSigningIdentity)) {
-            "Downloaded APK signature does not match the installed app"
-        }
-    }
-
-    private fun getArchivePackageInfo(
-        packageManager: PackageManager,
-        apkFile: File
-    ): PackageInfo? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        packageManager.getPackageArchiveInfo(
-            apkFile.absolutePath,
-            PackageManager.PackageInfoFlags.of(
-                PackageManager.GET_SIGNING_CERTIFICATES.toLong()
-            )
-        )
-    } else {
-        @Suppress("DEPRECATION")
-        packageManager.getPackageArchiveInfo(
-            apkFile.absolutePath,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                PackageManager.GET_SIGNING_CERTIFICATES
-            } else {
-                PackageManager.GET_SIGNATURES
-            }
-        )
-    }
-
-    private fun getInstalledPackageInfo(
-        packageManager: PackageManager,
-        packageName: String
-    ): PackageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        packageManager.getPackageInfo(
-            packageName,
-            PackageManager.PackageInfoFlags.of(
-                PackageManager.GET_SIGNING_CERTIFICATES.toLong()
-            )
-        )
-    } else {
-        @Suppress("DEPRECATION")
-        packageManager.getPackageInfo(
-            packageName,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                PackageManager.GET_SIGNING_CERTIFICATES
-            } else {
-                PackageManager.GET_SIGNATURES
-            }
-        )
-    }
-
-    private val REDIRECT_STATUS_CODES = setOf(
-        HttpURLConnection.HTTP_MOVED_PERM,
-        HttpURLConnection.HTTP_MOVED_TEMP,
-        HttpURLConnection.HTTP_SEE_OTHER,
-        307,
-        308
-    )
 }
-
-internal data class ApkSigningIdentity(
-    val currentSigners: Set<String>,
-    val signingHistory: Set<String>,
-    val hasMultipleSigners: Boolean
-)
-
-internal fun isUpdateVersionCodeAcceptable(
-    installedVersionCode: Long,
-    candidateVersionCode: Long
-): Boolean = installedVersionCode >= 0L && candidateVersionCode >= installedVersionCode
-
-/**
- * Checks signer compatibility in the same direction as an update.
- *
- * A single-signer candidate may use the installed current signer, or a newer signer whose APK
- * carries the installed signer in its proof-of-rotation history. A candidate signed only with an
- * older certificate from the installed app's history is intentionally rejected. Multiple-signer
- * packages cannot use certificate rotation and therefore require the exact current signer set.
- */
-internal fun isSigningLineageCompatible(
-    installed: ApkSigningIdentity,
-    candidate: ApkSigningIdentity
-): Boolean {
-    if (installed.currentSigners.isEmpty() || candidate.currentSigners.isEmpty()) return false
-    if (installed.hasMultipleSigners || candidate.hasMultipleSigners) {
-        return installed.hasMultipleSigners == candidate.hasMultipleSigners &&
-            installed.currentSigners == candidate.currentSigners
-    }
-    val installedCurrent = installed.currentSigners.singleOrNull() ?: return false
-    val candidateCurrent = candidate.currentSigners.singleOrNull() ?: return false
-    return candidateCurrent == installedCurrent ||
-        installedCurrent in candidate.signingHistory
-}
-
-private fun PackageInfo.longVersionCodeCompat(): Long =
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) longVersionCode else {
-        @Suppress("DEPRECATION")
-        versionCode.toLong()
-    }
-
-private fun PackageInfo.toSigningIdentity(): ApkSigningIdentity {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-        val info = signingInfo ?: error("APK signing information is unavailable")
-        val hasMultipleSigners = info.hasMultipleSigners()
-        val current = info.apkContentsSigners.orEmpty().toCertificateDigests()
-        val history = if (hasMultipleSigners) {
-            current
-        } else {
-            info.signingCertificateHistory.orEmpty().toCertificateDigests() + current
-        }
-        return ApkSigningIdentity(current, history, hasMultipleSigners)
-    }
-    @Suppress("DEPRECATION")
-    val current = signatures.orEmpty().toCertificateDigests()
-    return ApkSigningIdentity(current, current, hasMultipleSigners = current.size > 1)
-}
-
-private fun Array<out Signature>.toCertificateDigests(): Set<String> =
-    mapTo(linkedSetOf()) { signature ->
-        MessageDigest.getInstance("SHA-256")
-            .digest(signature.toByteArray())
-            .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
-    }

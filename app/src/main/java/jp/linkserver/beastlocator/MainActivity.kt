@@ -1,5 +1,11 @@
 package jp.linkserver.beastlocator
 
+import jp.linkserver.goldy.UpdateCandidate
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 import android.annotation.SuppressLint
 import android.Manifest
 import android.animation.ObjectAnimator
@@ -118,7 +124,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var isShowingPreciseLocationPermissionGuide = false
     private lateinit var backgroundPermissionGuide: BackgroundLocationPermissionGuide
     private var updateCheckOperation: AppUpdateManager.Operation? = null
-    private var pendingUpdateInfo: AppUpdateInfo? = null
+    private var pendingUpdateInfo: UpdateCandidate? = null
     private var hasStartedAutomaticUpdateCheck = false
     private lateinit var updateBannerCard: View
     private lateinit var updateBannerBody: TextView
@@ -195,6 +201,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         findViewById<ImageButton>(R.id.updateBannerDismissButton).setOnClickListener {
             dismissPendingUpdateNotification()
         }
+        observeAppUpdates()
         arrowView.clearColorFilter()
         findViewById<Button>(R.id.createNextDestinationButton).setOnClickListener {
             resetDestinationProgress()
@@ -326,9 +333,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             AppUpdateManager.checkForUpdate(this) { result ->
                 updateCheckOperation = null
                 result.onSuccess { updateInfo ->
-                    if (updateInfo != null &&
-                        !AppUpdateManager.isUpdateNotificationDismissed(this, updateInfo.tagName)
-                    ) {
+                    if (updateInfo != null) {
                         pendingUpdateInfo = updateInfo
                         maybeShowUpdateBanner()
                     }
@@ -341,22 +346,42 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }.getOrNull()
     }
 
+    private fun observeAppUpdates() {
+        lifecycleScope.launch {
+            try {
+                // Also retry SDK package-replacement maintenance on a normal app launch.
+                UpdateTransferRuntime.get(application)
+                val host = AppUpdateManager.host(this@MainActivity)
+                host.initialize()
+                repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    host.engine.state.collect { state ->
+                        val previous = pendingUpdateInfo
+                        pendingUpdateInfo = state.notificationUpdate.takeIf { state.showBanner }
+                        if (pendingUpdateInfo != null) maybeShowUpdateBanner()
+                        else if (previous != null) hideUpdateBanner()
+                    }
+                }
+            } catch (cancel: CancellationException) { throw cancel }
+            catch (error: Exception) { AppDiagnostics.warn("updater_restore_failed", error = error) }
+        }
+    }
+
     private fun maybeShowUpdateBanner() {
         val updateInfo = pendingUpdateInfo ?: return
         if (isFinishing || isDestroyed || !hasWindowFocus()) return
-        if (displayedUpdateTag == updateInfo.tagName &&
+        if (displayedUpdateTag == updateInfo.release.tag &&
             updateBannerCard.visibility == View.VISIBLE
         ) {
             return
         }
 
-        displayedUpdateTag = updateInfo.tagName
-        updateBannerBody.text = getString(R.string.update_banner_body, updateInfo.tagName)
+        displayedUpdateTag = updateInfo.release.tag
+        updateBannerBody.text = getString(R.string.update_banner_body, updateInfo.release.tag)
         updateBannerCard.animate().cancel()
         updateBannerCard.alpha = 0f
         updateBannerCard.visibility = View.VISIBLE
         updateBannerCard.post {
-            if (pendingUpdateInfo?.tagName != updateInfo.tagName ||
+            if (pendingUpdateInfo?.release?.tag != updateInfo.release.tag ||
                 isFinishing || isDestroyed || !hasWindowFocus()
             ) {
                 updateBannerCard.visibility = View.GONE
@@ -374,6 +399,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun openPendingUpdateDetails() {
+        AppUpdateManager.hideBanner(this)
         val updateInfo = pendingUpdateInfo ?: return
         pendingUpdateInfo = null
         hideUpdateBanner {
@@ -385,7 +411,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private fun dismissPendingUpdateNotification() {
         val updateInfo = pendingUpdateInfo ?: return
-        AppUpdateManager.dismissUpdateNotificationUntilNextVersion(this, updateInfo.tagName)
+        AppUpdateManager.dismissUpdateNotificationUntilNextVersion(this, updateInfo.release.tag)
         pendingUpdateInfo = null
         hideUpdateBanner()
     }

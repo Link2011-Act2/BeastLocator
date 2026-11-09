@@ -118,7 +118,7 @@ class SettingsActivity : AppCompatActivity() {
 
         findViewById<TextView>(R.id.versionText).text =
             getString(R.string.version_format, currentVersionName)
-        debugRevisionValue.text = getString(R.string.debug_revision_value, BuildConfig.BUILD_NUMBER)
+        debugRevisionValue.text = getString(R.string.debug_revision_value, TrickuildMetadata.BUILD_NUMBER)
         configureIntDevUpdateTesting(currentVersionName)
 
         refreshDestinationLabels()

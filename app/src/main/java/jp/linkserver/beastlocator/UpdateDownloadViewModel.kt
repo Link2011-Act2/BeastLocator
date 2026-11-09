@@ -2,125 +2,50 @@ package jp.linkserver.beastlocator
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.MutableLiveData
-import java.io.File
-import java.util.concurrent.atomic.AtomicBoolean
+import jp.linkserver.goldy.*
+import java.nio.ByteBuffer
+import java.security.MessageDigest
 
-internal sealed interface UpdateDownloadState {
-    data object Idle : UpdateDownloadState
-
-    data class Downloading(
-        val progress: ApkDownloadProgress?
-    ) : UpdateDownloadState
-
-    data class Downloaded(
-        val apkFile: SingleUseValue<File>
-    ) : UpdateDownloadState
-
-    data class Failed(
-        val error: Throwable
-    ) : UpdateDownloadState
-
-    data object Cancelled : UpdateDownloadState
+/** Identifies the pinned catalog/asset snapshot for presentation; never authenticates an APK. */
+internal fun transferIdentity(candidate: UpdateCandidate?): String? = candidate?.release?.let { release ->
+    val asset = ApkUpdateProfile.selection.select(release)
+    val digest = MessageDigest.getInstance("SHA-256")
+    listOf(release.id.toString(), release.tag, release.url, asset?.id?.toString(), asset?.downloadUrl,
+        asset?.size?.toString(), asset?.digest).forEach { value ->
+        val bytes = value?.toByteArray(Charsets.UTF_8)
+        digest.update(ByteBuffer.allocate(4).putInt(bytes?.size ?: -1).array())
+        if (bytes != null) digest.update(bytes)
+    }
+    digest.digest().joinToString("") { "%02x".format(it.toInt() and 255) }
 }
 
-/** A value that can be claimed once, including across LiveData re-delivery after rotation. */
-internal class SingleUseValue<T>(private val value: T) {
-    private val claimed = AtomicBoolean(false)
-
-    fun claim(): T? = if (claimed.compareAndSet(false, true)) value else null
-
-    fun peek(): T = value
+internal data class UpdateDownloadState(
+    val tag: String = "",
+    val transfer: UpdateTransferState = UpdateTransferState.Idle,
+    val requests: List<InstallRequest> = emptyList(),
+    val message: String? = null,
+    val restoring: Boolean = true,
+    val releaseIdentity: String? = null,
+    val waiting: Boolean = false,
+    val retainedProgress: ApkProgress? = null,
+    val preparedRequest: InstallRequest? = null
+) {
+    val busy get() = transfer is UpdateTransferState.Downloading || transfer == UpdateTransferState.Verifying ||
+        transfer == UpdateTransferState.PreparingInstall
+    val hasTransfer get() = requests.isNotEmpty() || tag.isNotBlank() && (busy || waiting ||
+        transfer == UpdateTransferState.Ready || transfer == UpdateTransferState.PermissionRequired)
 }
 
-internal class UpdateDownloadViewModel(application: Application) : AndroidViewModel(application) {
-    private val mutableState = MutableLiveData<UpdateDownloadState>(UpdateDownloadState.Idle)
-    val state: LiveData<UpdateDownloadState> = mutableState
-
-    private var downloadOperation: AppUpdateManager.Operation? = null
-
-    var waitingForInstallPermission: Boolean = false
-        private set
-    private var installSettingsOpened: Boolean = false
-
-    fun startDownload(updateInfo: AppUpdateInfo) {
-        if (downloadOperation != null || mutableState.value is UpdateDownloadState.Downloading) return
-        mutableState.value = UpdateDownloadState.Downloading(progress = null)
-        downloadOperation = runCatching {
-            AppUpdateManager.downloadApk(
-                context = getApplication(),
-                updateInfo = updateInfo,
-                onProgress = { progress ->
-                    if (downloadOperation != null) {
-                        mutableState.value = UpdateDownloadState.Downloading(progress)
-                    }
-                },
-                onResult = { result ->
-                    downloadOperation = null
-                    result.onSuccess { apkFile ->
-                        mutableState.value = UpdateDownloadState.Downloaded(
-                            SingleUseValue(apkFile)
-                        )
-                    }.onFailure(::reportFailure)
-                }
-            )
-        }.getOrElse { error ->
-            reportFailure(error)
-            null
-        }
-    }
-
-    fun cancelDownload() {
-        downloadOperation?.cancel()
-        downloadOperation = null
-        mutableState.value = UpdateDownloadState.Cancelled
-    }
-
-    fun claimDownloadedFile(state: UpdateDownloadState.Downloaded): File? {
-        if (mutableState.value !== state) return null
-        val file = state.apkFile.claim() ?: return null
-        mutableState.value = UpdateDownloadState.Idle
-        return file
-    }
-
-    fun reportInstallerFailure(error: Throwable) {
-        reportFailure(error)
-    }
-
-    fun beginInstallPermissionRequest() {
-        waitingForInstallPermission = true
-        installSettingsOpened = true
-    }
-
-    fun markInstallSettingsOpenFailed() {
-        installSettingsOpened = false
-    }
-
-    fun consumeInstallSettingsReturn(): Boolean {
-        if (!waitingForInstallPermission || !installSettingsOpened) return false
-        installSettingsOpened = false
-        return true
-    }
-
-    fun clearInstallPermissionRequest() {
-        waitingForInstallPermission = false
-        installSettingsOpened = false
-    }
-
-    private fun reportFailure(error: Throwable) {
-        downloadOperation = null
-        mutableState.value = UpdateDownloadState.Failed(error)
-        AppDiagnostics.warn("update_download_failed", error = error)
-    }
-
-    override fun onCleared() {
-        downloadOperation?.cancel()
-        downloadOperation = null
-        (mutableState.value as? UpdateDownloadState.Downloaded)
-            ?.apkFile
-            ?.peek()
-            ?.delete()
-        super.onCleared()
-    }
+/** Presentation bridge only; clearing a ViewModel never cancels an Android-managed transfer. */
+internal class UpdateDownloadViewModel @JvmOverloads constructor(
+    application: Application,
+    internal val runtime: UpdateTransferRuntime = UpdateTransferRuntime.get(application)
+) : AndroidViewModel(application) {
+    val state = runtime.state
+    val selection = runtime.selection
+    fun selectCandidate(candidate: UpdateCandidate?) = runtime.selectCandidate(candidate)
+    fun action(candidate: UpdateCandidate?, action: UpdateAction) = runtime.action(candidate, action)
+    fun cancel() = runtime.requestCancel()
+    fun onForegroundChanged(visible: Boolean) = runtime.setForeground(this, visible)
+    override fun onCleared() { runtime.setForeground(this, false); super.onCleared() }
 }

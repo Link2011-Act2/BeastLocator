@@ -1,186 +1,63 @@
 package jp.linkserver.beastlocator
 
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
+import jp.linkserver.goldy.*
+import org.junit.Assert.*
 import org.junit.Test
 
+/** Migration expectations: selection uses the official app profile; no host ABI or version parser. */
 class GitHubReleaseCheckerTest {
-    @Test
-    fun newerSemanticVersionIsDetected() {
-        assertTrue(isNewerRelease("v0.9.7-IntDev_rev0", "0.9.6-IntDev_rev99"))
-        assertFalse(isNewerRelease("v0.9.5-Release", "0.9.6-IntDev_rev0"))
+    private fun release(tag: String, vararg names: String) = GitHubRelease(100, tag,
+        url="https://github.com/Link2011-Act2/BeastLocator/releases/tag/$tag",
+        assets=names.mapIndexed { index, name -> GitHubAsset(index + 1L, name,
+            "https://github.com/Link2011-Act2/BeastLocator/releases/download/$tag/$name", null, null) })
+    private fun outcome(current: String, vararg tags: String, preview: Boolean = false) = ReleaseSelector.select(
+        ReleaseCatalog(tags.map(::release)), InstalledVersion(current, 1), ApkUpdateProfile.policy,
+        updateOptions(current, preview, null))
+    @Test fun newerSemanticVersionIsDetected() {
+        assertTrue(outcome("0.9.6-IntDev_rev99", "v0.9.7-IntDev_rev0") is CheckOutcome.Available)
+        assertEquals(CheckOutcome.UpToDate, outcome("0.9.6-IntDev_rev0", "v0.9.5-Release"))
     }
-
-    @Test
-    fun channelPromotionAtSameVersionIsDetected() {
-        assertTrue(isNewerRelease("v0.9.6-Beta", "0.9.6-IntDev_rev8"))
-        assertFalse(isNewerRelease("v0.9.6-Release", "0.9.6-Stable"))
-        assertFalse(isNewerRelease("v0.9.6-IntDev_rev8", "0.9.6-Beta"))
+    @Test fun channelPromotionAtSameVersionIsDetected() {
+        assertTrue(outcome("0.9.6-IntDev_rev8", "v0.9.6-Beta") is CheckOutcome.Available)
+        assertEquals(CheckOutcome.UpToDate, outcome("0.9.6-Beta", "v0.9.6-IntDev_rev8"))
     }
-
-    @Test
-    fun appRevisionSuffixIsComparedNumerically() {
-        assertTrue(isNewerRelease("v0.9.6-IntDev_rev12", "0.9.6-IntDev_rev9"))
-        assertFalse(isNewerRelease("v0.9.6-IntDev_rev9", "0.9.6-IntDev_rev12"))
-        assertFalse(isNewerRelease("v0.9.6-IntDev_rev12", "0.9.6-IntDev_rev12"))
+    @Test fun appRevisionSuffixIsComparedNumerically() {
+        assertTrue(outcome("0.9.6-IntDev_rev9", "v0.9.6-IntDev_rev12") is CheckOutcome.Available)
+        assertEquals(CheckOutcome.UpToDate, outcome("0.9.6-IntDev_rev12", "v0.9.6-IntDev_rev9"))
     }
-
-    @Test
-    fun onlyHttpsGitHubDownloadHostsAreTrusted() {
-        assertTrue(
-            isTrustedGitHubDownloadUrl(
-                "https://github.com/Link2011-Act2/BeastLocator/releases/download/v1/app.apk"
-            )
-        )
-        assertTrue(
-            isTrustedGitHubDownloadUrl(
-                "https://release-assets.githubusercontent.com/github-production-release-asset/app.apk"
-            )
-        )
-        assertFalse(isTrustedGitHubDownloadUrl("http://github.com/example/app.apk"))
-        assertFalse(isTrustedGitHubDownloadUrl("https://github.com.example.org/app.apk"))
+    @Test fun publishedReleaseWithoutApkRemainsReadableButCannotDownload() {
+        assertTrue(outcome("0.9.0-Release", "v1.0.0-Release") is CheckOutcome.Available)
+        assertNull(ApkUpdateProfile.selection.select(release("v1.0.0-Release")))
     }
-
-    @Test
-    fun showLatestTestingCanSelectAnOlderRelease() {
-        val release = AppUpdateInfo(
-            tagName = "v0.9.5-Beta",
-            channel = ReleaseChannel.BETA,
-            releaseNotes = "notes",
-            releaseUrl = "https://github.com/Link2011-Act2/BeastLocator/releases/tag/v0.9.5-Beta",
-            apkAssetName = "BeastLocator.apk",
-            apkDownloadUrl = null,
-            isPrerelease = true
-        )
-        assertNull(selectLatestUpdate(listOf(release), "0.9.6-IntDev_rev0", false))
-        assertEquals(
-            release,
-            selectLatestUpdate(listOf(release), "0.9.6-IntDev_rev0", true)
-        )
+    @Test fun showLatestTestingCanSelectAnOlderReleaseOnlyOnIntDev() {
+        assertTrue(outcome("2.0.0-IntDev", "v1.0.0-Release", preview=true) is CheckOutcome.Available)
+        assertEquals(CheckOutcome.UpToDate, outcome("2.0.0-Release", "v1.0.0-Release", preview=true))
     }
-
-    @Test
-    fun unsafeApkVariantsAreNeverSelected() {
-        val selected = selectSafeApkAsset(
-            listOf(
-                asset("BeastLocator-universal-debug.apk"),
-                asset("BeastLocator-universal-unsigned.apk"),
-                asset("BeastLocator-androidTest.apk"),
-                asset("BeastLocator-test-release.apk"),
-                asset("BeastLocatorTestRelease.apk"),
-                asset("BeastLocator-benchmark.apk"),
-                asset("BeastLocator-universal-release.apk")
-            )
-        )
-
-        assertEquals("BeastLocator-universal-release.apk", selected?.name)
+    @Test fun multipleApksIncludingDebugAreRejectedAsAmbiguous() {
+        assertNull(ApkUpdateProfile.selection.select(release("v1.0.0", "debug.apk", "release.apk")))
     }
-
-    @Test
-    fun universalProductReleaseApkIsPreferredDeterministically() {
-        val selected = selectSafeApkAsset(
-            listOf(
-                asset("app-release.apk"),
-                asset("BeastLocator-arm64-v8a-release.apk"),
-                asset("app-universal-release.apk"),
-                asset("BeastLocator-universal.apk"),
-                asset("BeastLocator-universal-release.apk")
-            )
-        )
-
-        assertEquals("BeastLocator-universal-release.apk", selected?.name)
+    @Test fun universalAndAbiApksRequireAnExplicitFuturePolicy() {
+        assertNull(ApkUpdateProfile.selection.select(release("v1.0.0", "universal.apk", "arm64.apk")))
     }
-
-    @Test
-    fun equallySafeApksAreRejectedAsAmbiguous() {
-        val selected = selectSafeApkAsset(
-            listOf(
-                asset("BeastLocator-universal-release-one.apk"),
-                asset("BeastLocator-universal-release-two.apk")
-            )
-        )
-
-        assertNull(selected)
+    @Test fun equallyNamedApksAreRejectedAsAmbiguous() {
+        assertNull(ApkUpdateProfile.selection.select(release("v1.0.0", "a.apk", "b.apk")))
     }
-
-    @Test
-    fun soleSafeApkCanBeSelectedWithoutNamingConvention() {
-        val selected = selectSafeApkAsset(
-            listOf(
-                asset("app.apk"),
-                asset("app-debug.apk")
-            )
-        )
-
-        assertEquals("app.apk", selected?.name)
+    @Test fun soleApkCanBeSelectedWithoutNamingConvention() {
+        assertEquals("app.apk", ApkUpdateProfile.selection.select(release("v1.0.0", "app.apk"))?.name)
     }
-
-    @Test
-    fun apkForSupportedAbiIsSelected() {
-        val selected = selectSafeApkAsset(
-            assets = listOf(
-                asset("BeastLocator-arm64-v8a-release.apk"),
-                asset("BeastLocator-x86-release.apk")
-            ),
-            supportedAbis = listOf("arm64-v8a", "armeabi-v7a")
-        )
-
-        assertEquals("BeastLocator-arm64-v8a-release.apk", selected?.name)
+    @Test fun soleApkWithAbiNameUsesSinglePolicyAndStillRequiresVerification() {
+        assertEquals("arm64.apk", ApkUpdateProfile.selection.select(release("v1.0.0", "arm64.apk"))?.name)
     }
-
-    @Test
-    fun soleApkForUnsupportedAbiIsRejected() {
-        val selected = selectSafeApkAsset(
-            assets = listOf(asset("BeastLocator-arm64-v8a-release.apk")),
-            supportedAbis = listOf("x86_64", "x86")
-        )
-
-        assertNull(selected)
+    @Test fun nonApkAssetsAreNotSelected() {
+        assertNull(ApkUpdateProfile.selection.select(release("v1.0.0", "notes.txt", "source.zip")))
     }
-
-    @Test
-    fun universalApkIsPreferredOverCompatibleAbiApk() {
-        val selected = selectSafeApkAsset(
-            assets = listOf(
-                asset("BeastLocator-arm64-v8a-release.apk"),
-                asset("BeastLocator-universal-release.apk")
-            ),
-            supportedAbis = listOf("arm64-v8a", "armeabi-v7a")
-        )
-
-        assertEquals("BeastLocator-universal-release.apk", selected?.name)
+    @Test fun nonApkSidecarsDoNotMakeOneApkAmbiguous() {
+        assertEquals("app.apk", ApkUpdateProfile.selection.select(release("v1.0.0", "app.apk", "app.apk.sha256"))?.name)
     }
-
-    @Test
-    fun firstSupportedAbiIsPreferredWhenSeveralAbiSplitsAreCompatible() {
-        val selected = selectSafeApkAsset(
-            assets = listOf(
-                asset("BeastLocator-armeabi-v7a-release.apk"),
-                asset("BeastLocator-arm64-v8a-release.apk")
-            ),
-            supportedAbis = listOf("arm64-v8a", "armeabi-v7a")
-        )
-
-        assertEquals("BeastLocator-arm64-v8a-release.apk", selected?.name)
+    @Test fun multipleSupportedAbisAreNotGuessedByHost() {
+        assertNull(ApkUpdateProfile.selection.select(release("v1.0.0", "arm64.apk", "armeabi.apk")))
     }
-
-    @Test
-    fun x86_64MarkerIsDistinctFromX86Marker() {
-        val selected = selectSafeApkAsset(
-            assets = listOf(
-                asset("BeastLocator-x86-release.apk"),
-                asset("BeastLocator-x86_64-release.apk")
-            ),
-            supportedAbis = listOf("x86_64", "x86")
-        )
-
-        assertEquals("BeastLocator-x86_64-release.apk", selected?.name)
+    @Test fun x86AndX64AssetsAreNotGuessedByHost() {
+        assertNull(ApkUpdateProfile.selection.select(release("v1.0.0", "x86.apk", "x86_64.apk")))
     }
-
-    private fun asset(name: String) = GitHubReleaseChecker.GitHubReleaseAsset(
-        name = name,
-        browserDownloadUrl = "https://github.com/example/project/releases/download/v1/$name"
-    )
 }

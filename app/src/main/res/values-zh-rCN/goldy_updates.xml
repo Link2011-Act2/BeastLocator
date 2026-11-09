@@ -1,0 +1,33 @@
+<resources>
+    <string name="goldy_transfer_allow_install">在设置中允许安装</string>
+    <string name="goldy_transfer_channel">应用更新</string>
+    <string name="goldy_transfer_download">下载更新</string>
+    <string name="goldy_transfer_foreground_install">返回应用后安装</string>
+    <string name="goldy_transfer_install">安装</string>
+    <string name="goldy_transfer_paused">下载已中断</string>
+    <string name="goldy_transfer_permission_ready">需要安装权限</string>
+    <string name="goldy_transfer_queued">正在开始下载…</string>
+    <string name="goldy_transfer_restart">继续下载</string>
+    <string name="goldy_transfer_restarted">正在重新下载…</string>
+    <string name="goldy_transfer_schedule_failed">无法开始下载</string>
+    <string name="goldy_transfer_title">BeastLocator 更新</string>
+    <string name="goldy_update_cancel_download">取消下载</string>
+    <string name="goldy_update_cancelled">已取消下载</string>
+    <string name="goldy_update_cleanup_failed">无法删除临时文件</string>
+    <string name="goldy_update_download_failed">下载失败</string>
+    <string name="goldy_update_failed">检查更新失败</string>
+    <string name="goldy_update_handed_off">已打开安装程序</string>
+    <string name="goldy_update_idle">可以检查更新</string>
+    <string name="goldy_update_install_failed">无法开始安装</string>
+    <string name="goldy_update_invalid_apk">无法使用此 APK 更新</string>
+    <string name="goldy_update_no_apk">没有可下载的 APK</string>
+    <string name="goldy_update_preparing">正在准备安装…</string>
+    <string name="goldy_update_ready">可以安装</string>
+    <string name="goldy_update_restore_failed">无法恢复更新信息</string>
+    <string name="goldy_update_retry">重新检查</string>
+    <string name="goldy_update_signing_mismatch">签名不同，无法更新</string>
+    <string name="goldy_update_verifying">正在检查更新文件…</string>
+    <string name="goldy_update_view">查看更新</string>
+    <string name="settings_open_failed">无法打开 Android 设置</string>
+    <string name="goldy_update_save_failed">无法保存更新信息</string>
+</resources>

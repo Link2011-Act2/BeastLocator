@@ -1,0 +1,33 @@
+<resources>
+    <string name="goldy_transfer_allow_install">Allow installation in settings</string>
+    <string name="goldy_transfer_channel">App updates</string>
+    <string name="goldy_transfer_download">Download update</string>
+    <string name="goldy_transfer_foreground_install">Return to the app to install the update.</string>
+    <string name="goldy_transfer_install">Install</string>
+    <string name="goldy_transfer_paused">Download interrupted.</string>
+    <string name="goldy_transfer_permission_ready">Installation permission is required.</string>
+    <string name="goldy_transfer_queued">Starting download…</string>
+    <string name="goldy_transfer_restart">Resume download</string>
+    <string name="goldy_transfer_restarted">Downloading again from the beginning…</string>
+    <string name="goldy_transfer_schedule_failed">Could not start the download.</string>
+    <string name="goldy_transfer_title">BeastLocator update</string>
+    <string name="goldy_update_cancel_download">Cancel download</string>
+    <string name="goldy_update_cancelled">Download cancelled.</string>
+    <string name="goldy_update_cleanup_failed">Could not delete temporary files.</string>
+    <string name="goldy_update_download_failed">Could not download the update APK.</string>
+    <string name="goldy_update_failed">Could not check updates. Cached information is retained.</string>
+    <string name="goldy_update_handed_off">Installer opened.</string>
+    <string name="goldy_update_idle">Check for a new version.</string>
+    <string name="goldy_update_install_failed">Could not prepare the installation.</string>
+    <string name="goldy_update_invalid_apk">This APK does not match the selected update.</string>
+    <string name="goldy_update_no_apk">No APK is available.</string>
+    <string name="goldy_update_preparing">Preparing to install…</string>
+    <string name="goldy_update_ready">Ready to install.</string>
+    <string name="goldy_update_restore_failed">Could not load update information.</string>
+    <string name="goldy_update_retry">Check again</string>
+    <string name="goldy_update_signing_mismatch">The APK signer is not a permitted update of this app.</string>
+    <string name="goldy_update_verifying">Verifying update…</string>
+    <string name="goldy_update_view">View update</string>
+    <string name="settings_open_failed">Could not open Android settings.</string>
+    <string name="goldy_update_save_failed">Could not save update settings</string>
+</resources>

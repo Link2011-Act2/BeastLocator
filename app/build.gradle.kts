@@ -1,10 +1,6 @@
 import java.io.File
 import java.nio.charset.StandardCharsets
-import java.security.MessageDigest
 import java.text.SimpleDateFormat
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
@@ -117,11 +113,11 @@ abstract class ExtractLeafletAssetsTask : DefaultTask() {
 }
 
 plugins {
+    id("dev.trickuild")
     id("com.android.application")
 }
 
-val appCodeName = "NKTIDKSG"
-val appVersionName = "1.0.0-RC1"
+val appVersionName = "1.0.0-IntDev_RC2"
 val leafletAssetsConfiguration = configurations.create("leafletAssets") {
     isCanBeConsumed = false
     isCanBeResolved = true
@@ -184,29 +180,7 @@ fun createApkVersionLabel(versionName: String): String {
 }
 
 val generatedApkVersionLabel = createApkVersionLabel(appVersionName)
-val buildNumberFiles = (
-    fileTree("src") { exclude("**/build/**") }.files + listOf(
-        project.file("build.gradle.kts"),
-        rootProject.file("build.gradle.kts"),
-        rootProject.file("settings.gradle.kts"),
-        rootProject.file("gradle/libs.versions.toml")
-    ).filter { it.isFile }
-).sortedBy { it.relativeTo(rootProject.projectDir).invariantSeparatorsPath }
 
-val buildContentHash = MessageDigest.getInstance("SHA-256").run {
-    buildNumberFiles.forEach { file ->
-        update(file.relativeTo(rootProject.projectDir).invariantSeparatorsPath.toByteArray())
-        update(0)
-        update(file.readBytes())
-        update(0)
-    }
-    digest().joinToString("") { "%02x".format(it) }
-}
-val buildTimestamp = DateTimeFormatter.ofPattern("yyMMdd-HHmm")
-    .withZone(ZoneId.systemDefault())
-    .format(Instant.ofEpochMilli(buildNumberFiles.maxOf { it.lastModified() }))
-val generatedBuildNumber =
-    "$appCodeName-v${appVersionName.substringBefore('-')}-$buildTimestamp-${buildContentHash.take(3)}"
 
 data class OssCatalogEntry(
     val title: String,
@@ -455,9 +429,19 @@ val generateOssLicensesAutoJson = tasks.register<GenerateOssAssetsTask>("generat
     }
 }
 
+trickuild {
+    codename.set("NKTIDKSG")
+    buildNumber {
+        enabled.set(true)
+        hashLength.set(5)
+        timestampSource.set("build")
+        timeZone.set("Asia/Tokyo")
+    }
+}
+
 android {
     namespace = "jp.linkserver.beastlocator"
-    compileSdk = 36
+    compileSdk = 37
 
     buildFeatures {
         buildConfig = true
@@ -469,12 +453,13 @@ android {
         targetSdk = 36
         versionCode = 202608092   // 2026, 08, 09, 1(年、月、日、その日のうちの何個目)
         versionName = appVersionName
-        buildConfigField("String", "BUILD_NUMBER", "\"$generatedBuildNumber\"")
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // Exercise the existing Release configuration with R8 without changing normal packaging.
+            isMinifyEnabled = providers.gradleProperty("verifyUpdateR8").map(String::toBoolean).getOrElse(false)
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -532,7 +517,10 @@ dependencies {
     implementation("com.google.android.material:material:1.13.0")
     implementation("androidx.constraintlayout:constraintlayout:2.2.1")
     implementation("androidx.activity:activity-ktx:1.13.0")
-    implementation("androidx.work:work-runtime:2.11.2")
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.10.0")
+    implementation("com.github.Link2011-Act2.Goldy:gold:809dda97ab45cd28812f150697cba126c6d4d406")
     implementation("com.google.android.gms:play-services-location:21.3.0")
     implementation("org.webjars.npm:leaflet:1.9.4") {
         isTransitive = false
@@ -541,4 +529,8 @@ dependencies {
     implementation("io.noties.markwon:core:4.6.2")
     implementation("io.noties.markwon:ext-tables:4.6.2")
     testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test:core-ktx:1.7.0")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
 }

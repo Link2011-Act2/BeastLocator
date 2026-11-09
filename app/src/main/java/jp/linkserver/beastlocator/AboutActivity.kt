@@ -1,5 +1,6 @@
 package jp.linkserver.beastlocator
 
+import jp.linkserver.goldy.UpdateCandidate
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -14,6 +15,11 @@ import androidx.core.view.doOnLayout
 import androidx.core.view.setPadding
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
 class AboutActivity : AppCompatActivity() {
     private var updateCheckOperation: AppUpdateManager.Operation? = null
@@ -50,6 +56,36 @@ class AboutActivity : AppCompatActivity() {
             checkForUpdateManually()
         }
 
+        findViewById<android.widget.Button>(R.id.aboutRecheckUpdateButton).setOnClickListener { checkAgain() }
+        lifecycleScope.launch {
+            try {
+                val host = AppUpdateManager.host(this@AboutActivity)
+                host.initialize()
+                repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    host.engine.state.collect { state ->
+                        val update = state.availableUpdate
+                        findViewById<android.widget.Button>(R.id.aboutCheckUpdateButton).apply {
+                            isEnabled = !state.checking
+                            setText(if (update == null) R.string.about_check_update_button else R.string.goldy_update_view)
+                        }
+                        findViewById<android.widget.Button>(R.id.aboutRecheckUpdateButton).apply {
+                            visibility = if (update == null) android.view.View.GONE else android.view.View.VISIBLE
+                            isEnabled = !state.checking
+                        }
+                        findViewById<TextView>(R.id.aboutUpdateNotesText).apply {
+                            when {
+                                state.checking -> setText(R.string.update_checking)
+                                state.lastOutcome is jp.linkserver.goldy.CheckOutcome.Failure -> setText(R.string.goldy_update_failed)
+                                update != null -> text = getString(R.string.update_available, update.release.tag)
+                                state.lastSuccessMillis != null -> setText(R.string.update_check_latest)
+                            }
+                        }
+                    }
+                }
+            } catch (cancel: CancellationException) { throw cancel }
+            catch (_: Exception) { findViewById<TextView>(R.id.aboutUpdateNotesText).setText(R.string.goldy_update_restore_failed) }
+        }
+
         findViewById<LinearLayout>(R.id.openOssLicensesCard).setOnClickListener {
             startActivity(Intent(this, OssLicensesActivity::class.java))
         }
@@ -75,39 +111,27 @@ class AboutActivity : AppCompatActivity() {
     }
 
     private fun checkForUpdateManually() {
+        AppUpdateManager.host(this).engine.state.value.availableUpdate?.let {
+            startActivity(UpdateActivity.createIntent(this, it)); return
+        }
+        checkAgain()
+    }
+    private fun checkAgain() {
         val button = findViewById<android.widget.Button>(R.id.aboutCheckUpdateButton)
         val notes = findViewById<TextView>(R.id.aboutUpdateNotesText)
         updateCheckOperation?.cancel()
         button.isEnabled = false
         notes.setText(R.string.update_checking)
-        updateCheckOperation = runCatching {
-            AppUpdateManager.checkForUpdate(this, force = true) { result ->
-                updateCheckOperation = null
-                button.isEnabled = true
-                result.onSuccess { updateInfo ->
-                    if (updateInfo == null) {
-                        notes.setText(R.string.update_check_latest)
-                    } else {
-                        notes.text = getString(R.string.update_available, updateInfo.tagName)
-                        startActivity(UpdateActivity.createIntent(this, updateInfo))
-                    }
-                }.onFailure { error ->
-                    notes.text = getString(
-                        R.string.update_check_failed,
-                        error.localizedMessage ?: error.javaClass.simpleName
-                    )
-                }
-            }
-        }.getOrElse { error ->
+        updateCheckOperation = AppUpdateManager.checkForUpdate(this, force = true) { result ->
+            updateCheckOperation = null
             button.isEnabled = true
-            notes.text = getString(
-                R.string.update_check_failed,
-                error.localizedMessage ?: error.javaClass.simpleName
-            )
-            null
+            result.onSuccess { update ->
+                button.setText(if (update == null) R.string.about_check_update_button else R.string.goldy_update_view)
+                notes.text = if (update == null) getString(R.string.update_check_latest) else getString(R.string.update_available, update.release.tag)
+                findViewById<android.widget.Button>(R.id.aboutRecheckUpdateButton).visibility = if (update == null) android.view.View.GONE else android.view.View.VISIBLE
+            }.onFailure { notes.setText(R.string.goldy_update_failed) }
         }
     }
-
     private fun resolveAppVersionInfo(): Pair<String, Int> {
         return try {
             val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -225,7 +249,7 @@ class AboutActivity : AppCompatActivity() {
                 R.string.about_version_details_message,
                 versionName,
                 versionCode,
-                BuildConfig.BUILD_NUMBER
+                TrickuildMetadata.BUILD_NUMBER
             )
             MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.about_version_details_title)
@@ -241,7 +265,7 @@ class AboutActivity : AppCompatActivity() {
             R.string.about_version_details_message,
             versionName,
             versionCode,
-            BuildConfig.BUILD_NUMBER
+            TrickuildMetadata.BUILD_NUMBER
         ).split('\n')
         val horizontalPadding = (24 * resources.displayMetrics.density).toInt()
         val container = LinearLayout(this).apply {
