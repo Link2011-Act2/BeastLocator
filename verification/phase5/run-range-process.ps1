@@ -1,4 +1,4 @@
-param([ValidatePattern('^emulator-[0-9]+$')][string]$Serial='emulator-5556', [string]$Adb='adb', [string]$Label='api36-development', [ValidateSet('range','ignore-range','tamper')][string]$Mode='range')
+param([Parameter(Mandatory=$true)][ValidatePattern('^emulator-[0-9]+$')][string]$Serial, [string]$Adb='adb', [string]$Label='api36-development', [ValidateSet('range','ignore-range','tamper')][string]$Mode='range')
 $ErrorActionPreference='Stop'
 $taskRoot=Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $taskOut=Join-Path $taskRoot "build/phase5/$Label"

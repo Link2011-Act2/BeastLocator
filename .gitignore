@@ -50,3 +50,36 @@ out/
 
 .debug-revision-state.properties
 
+# Local coding-assistant instructions and state
+AGENTS.md
+AGENTS.override.md
+CLAUDE.md
+GEMINI.md
+.agents/
+.codex/
+.claude/
+/design-qa.md
+/BUG_FIX_PLAN.md
+
+# Local editor settings and credentials
+*.p12
+*.pfx
+*.key
+*.pem
+.env
+.env.*
+!.env.example
+
+# Generated verification records; test runners and fixtures stay tracked.
+/verification/phase5/*.json
+/verification/phase5/*.md
+__pycache__/
+*.py[cod]
+
+# Local diagnostics and exported build artifacts
+*.pk8
+*.hprof
+*.tmp
+
+# Local document archives
+.local-notes/
